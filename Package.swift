@@ -46,6 +46,7 @@ let package = Package(
         .target(name: "SkipSyntax", dependencies: [
             .product(name: "SwiftSyntax", package: "swift-syntax"),
             .product(name: "SwiftSyntaxParser", package: "swift-syntax"),
+            .product(name: "SwiftSyntaxBuilder", package: "swift-syntax"),
             .product(name: "SymbolKit", package: "swift-docc-symbolkit"),
         ]),
         .testTarget(name: "SkipSyntaxTests", dependencies: ["SkipSyntax", "SkipLib", "SkipBuild"]),
