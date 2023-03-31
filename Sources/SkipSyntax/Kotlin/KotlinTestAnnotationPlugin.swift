@@ -14,11 +14,12 @@ class KotlinTestAnnotationPlugin: KotlinPlugin {
             if functionDeclaration.name.hasPrefix("test")
                 && !functionDeclaration.isStatic
                 && !functionDeclaration.isGlobal {
-                // check last for whether the containing class inherits from `XCTestCase`
                 let signatures = codebaseInfo.inheritanceChainSignatures(for: owningClass.signature)
                 if let owningType = signatures.last {
                     let infos = codebaseInfo.typeInfos(for: owningType)
-                    if infos.last?.inherits.contains(.named("XCTestCase", [])) == true {
+                    // check for whether the containing class inherits from `XCTestCase`
+                    let extendsXCTestCase = infos.contains { $0.inherits.contains(.named("XCTestCase", [])) }
+                    if extendsXCTestCase {
                         functionDeclaration.annotations += ["@Test"]
                         if functionDeclaration.isAsync {
                             // TODO: add in special support for testing coroutines: https://developer.android.com/kotlin/coroutines/test
