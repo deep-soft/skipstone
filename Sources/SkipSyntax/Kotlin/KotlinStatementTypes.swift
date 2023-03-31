@@ -1038,7 +1038,6 @@ class KotlinFunctionDeclaration: KotlinStatement, KotlinMemberDeclaration {
         let kstatement = KotlinFunctionDeclaration(statement: statement)
         kstatement.isAsync = statement.isAsync
         kstatement.modifiers = statement.modifiers
-        kstatement.modifiers = statement.modifiers
         kstatement.returnType = statement.returnType
         kstatement.parameters = statement.parameters.map { $0.translate(translator: translator) }
         var owningDeclarationType: StatementType? = nil
