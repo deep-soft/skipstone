@@ -6,6 +6,9 @@ final class PluginTests: XCTestCase {
         try await check(swift: """
         import XCTest
 
+        class XCTestCase : XCTest.XCTestCase {
+        }
+
         class TestCase: XCTestCase {
             func testSomeTest() throws {
             }
@@ -19,10 +22,13 @@ final class PluginTests: XCTestCase {
         """, kotlin: """
         import skip.unit.*
 
-        internal open class TestCase: XCTestCase {
+        internal open class XCTestCase: XCTest.XCTestCase {
+        }
+
+        internal open class TestCase: XCTestCase() {
             @Test internal open fun testSomeTest() {
             }
-        
+
             @Test internal open fun testSomeOtherTest() {
             }
 
@@ -32,27 +38,6 @@ final class PluginTests: XCTestCase {
                 }
             }
         }
-        """, plugins: [TestCaseAnnotationPlugin()])
+        """)
     }
 }
-
-class TestCaseAnnotationPlugin: KotlinPlugin {
-    func apply(to syntaxTree: KotlinSyntaxTree, translator: KotlinTranslator) {
-        if let codebaseInfo = translator.codebaseInfo {
-            syntaxTree.root.visit { visit($0, codebaseInfo: codebaseInfo) }
-        }
-    }
-
-    private func visit(_ node: KotlinSyntaxNode, codebaseInfo: CodebaseInfo.Context) -> VisitResult<KotlinSyntaxNode> {
-        if let functionDeclaration = node as? KotlinFunctionDeclaration,
-           let owningClass = functionDeclaration.parent as? KotlinClassDeclaration {
-            let extendsXCTest = codebaseInfo.inheritanceChainSignatures(for: owningClass.signature).contains(.named("TestCase", []))
-            if extendsXCTest && !functionDeclaration.isStatic && !functionDeclaration.isGlobal && functionDeclaration.extends == nil {
-                functionDeclaration.annotations += ["@Test"]
-            }
-        }
-
-        return .recurse(nil)
-    }
-}
-

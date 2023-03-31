@@ -1,0 +1,39 @@
+/// Add the necessary JUnit `@Test` annotation to any function named "test" in any class that extens "TestCase".
+///
+/// - Seealso: `SkipUnit/XCTestCase.kt`
+class KotlinTestAnnotationPlugin: KotlinPlugin {
+    func apply(to syntaxTree: KotlinSyntaxTree, translator: KotlinTranslator) {
+        if let codebaseInfo = translator.codebaseInfo {
+            syntaxTree.root.visit { visit($0, codebaseInfo: codebaseInfo) }
+        }
+    }
+
+    private func visit(_ node: KotlinSyntaxNode, codebaseInfo: CodebaseInfo.Context) -> VisitResult<KotlinSyntaxNode> {
+        if let functionDeclaration = node as? KotlinFunctionDeclaration,
+           let owningClass = functionDeclaration.parent as? KotlinClassDeclaration {
+            if functionDeclaration.name.hasPrefix("test")
+                && !functionDeclaration.isStatic
+                && !functionDeclaration.isGlobal {
+                // check last for whether the containing class inherits from `XCTestCase`
+                let signatures = codebaseInfo.inheritanceChainSignatures(for: owningClass.signature)
+                let extendsXCTest: Bool
+                if let owningType = signatures.last {
+                    let infos = codebaseInfo.typeInfos(for: owningType)
+                    if infos.last?.inherits.contains(.named("XCTestCase", [])) == true {
+                        functionDeclaration.annotations += ["@Test"]
+                        if functionDeclaration.isAsync {
+                            // TODO: add in special support for testing coroutines: https://developer.android.com/kotlin/coroutines/test
+                            // @Test fun testAsyncFunction() = runTest  {
+                            //     val result = asyncFunction()
+                            //     assertEquals(expectedResult, result)
+                            // }
+                        }
+                    }
+                }
+            }
+        }
+
+        return .recurse(nil)
+    }
+}
+
