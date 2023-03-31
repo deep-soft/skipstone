@@ -20,9 +20,10 @@ final class PluginTests: XCTestCase {
         import skip.unit.*
 
         internal open class TestCase: XCTestCase {
-            @Test    internal open fun testSomeTest() {
+            @Test internal open fun testSomeTest() {
             }
-            @Test    internal open fun testSomeOtherTest() {
+        
+            @Test internal open fun testSomeOtherTest() {
             }
 
             companion object {
@@ -45,8 +46,7 @@ class TestCaseAnnotationPlugin: KotlinPlugin {
     private func visit(_ node: KotlinSyntaxNode, codebaseInfo: CodebaseInfo.Context) -> VisitResult<KotlinSyntaxNode> {
         if let functionDeclaration = node as? KotlinFunctionDeclaration {
             if !functionDeclaration.isStatic && !functionDeclaration.isGlobal && functionDeclaration.extends == nil {
-                functionDeclaration.extras = functionDeclaration.extras ?? .init(directives: [], leadingTrivia: [], trailingTrivia: [])
-                functionDeclaration.extras!.leadingTrivia = ["@Test"]
+                functionDeclaration.annotations += ["@Test"]
             }
         }
         return .recurse(nil)

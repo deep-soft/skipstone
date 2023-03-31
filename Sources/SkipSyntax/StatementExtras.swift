@@ -15,9 +15,9 @@ struct StatementExtras {
         case invalid(String)
     }
 
-    var directives: [Directive]
-    var leadingTrivia: [String]
-    var trailingTrivia: [String]
+    let directives: [Directive]
+    let leadingTrivia: [String]
+    let trailingTrivia: [String]
 
     /// Extras consisting of a single leading new line, as is commonly used to separate type and function declarations.
     static let singleNewline = StatementExtras(directives: [], leadingTrivia: ["\n"], trailingTrivia: [])
