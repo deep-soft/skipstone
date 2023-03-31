@@ -44,15 +44,10 @@ class TestCaseAnnotationPlugin: KotlinPlugin {
     }
 
     private func visit(_ node: KotlinSyntaxNode, codebaseInfo: CodebaseInfo.Context) -> VisitResult<KotlinSyntaxNode> {
-
-        // annotate test functions for any subclass of XCTestCase
-        if let classDeclaration = node as? KotlinClassDeclaration {
-            let extendsXCTest = codebaseInfo.inheritanceChainSignatures(for: classDeclaration.signature).contains(.named("TestCase", []))
-            return extendsXCTest ? .recurse(nil) : .skip
-        }
-
-        if let functionDeclaration = node as? KotlinFunctionDeclaration {
-            if !functionDeclaration.isStatic && !functionDeclaration.isGlobal && functionDeclaration.extends == nil {
+        if let functionDeclaration = node as? KotlinFunctionDeclaration,
+           let owningClass = functionDeclaration.parent as? KotlinClassDeclaration {
+            let extendsXCTest = codebaseInfo.inheritanceChainSignatures(for: owningClass.signature).contains(.named("TestCase", []))
+            if extendsXCTest && !functionDeclaration.isStatic && !functionDeclaration.isGlobal && functionDeclaration.extends == nil {
                 functionDeclaration.annotations += ["@Test"]
             }
         }
