@@ -16,7 +16,6 @@ class KotlinTestAnnotationPlugin: KotlinPlugin {
                 && !functionDeclaration.isGlobal {
                 // check last for whether the containing class inherits from `XCTestCase`
                 let signatures = codebaseInfo.inheritanceChainSignatures(for: owningClass.signature)
-                let extendsXCTest: Bool
                 if let owningType = signatures.last {
                     let infos = codebaseInfo.typeInfos(for: owningType)
                     if infos.last?.inherits.contains(.named("XCTestCase", [])) == true {
