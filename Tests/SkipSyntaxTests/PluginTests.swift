@@ -6,9 +6,6 @@ final class PluginTests: XCTestCase {
         try await check(swift: """
         import XCTest
 
-        class XCTestCase : XCTest.XCTestCase {
-        }
-
         class TestCase: XCTestCase {
             func testSomeTest() throws {
             }
@@ -22,10 +19,7 @@ final class PluginTests: XCTestCase {
         """, kotlin: """
         import skip.unit.*
 
-        internal open class XCTestCase: XCTest.XCTestCase {
-        }
-
-        internal open class TestCase: XCTestCase() {
+        internal open class TestCase: XCTestCase {
             @Test internal open fun testSomeTest() {
             }
 
