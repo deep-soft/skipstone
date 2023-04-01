@@ -4,6 +4,30 @@ import XCTest
 /// A test case that verifies that transpilation are *not* working as hoped.
 final class FeatureSupportTests: XCTestCase {
 
+    func testTypealiasToSelf() async throws {
+        throw XCTSkip("stack overflow")
+
+        // stack overflow in #7    0x00000001235e2898 in closure #1 in CodebaseInfo.Context.typeInfos(for:) at /opt/src/github/skiptools/SkipSource/Sources/SkipSyntax/CodebaseInfo.swift:145
+
+        try await check(swift: """
+        typealias A = A
+
+        class A {
+        }
+
+        class B : A {
+        }
+        """, kotlin: """
+        typealias A = A
+
+        internal open class A {
+        }
+
+        internal open class B: A() {
+        }
+        """)
+    }
+
     func testCheckSwiftCompiledSource() async throws {
         try await check(swiftCode: {
             return "\(1 + 2)"
