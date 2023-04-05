@@ -405,6 +405,9 @@ struct TranspileAction: TranspilePhase, StreamingCommand {
     @OptionGroup(title: "Output Options")
     var outputOptions: OutputOptions
 
+    @OptionGroup(title: "License Options")
+    var licenseOptions: LicenseOptions
+
     struct Output : MessageConvertible {
         let transpilation: Transpilation
 
@@ -488,6 +491,7 @@ struct TranspileAction: TranspilePhase, StreamingCommand {
         let overriddenKotlinFiles = overridden.map({ $0.basename })
         // skip over any source file whose name would match a copied Kotlin file
         let sources = sourceFiles.map(\.sourceFile)
+        let sourceURLs = sourceFiles.map(\.asURL)
 
         // load and merge each of the skip.yml files for the dependent modules
         let (baseSkipConfig, mergedSkipConfig, configMap) = try loadSkipConfig(merge: true)
@@ -503,6 +507,19 @@ struct TranspileAction: TranspilePhase, StreamingCommand {
         }
 
         let codebaseInfo = try loadCodebaseInfo() // initialize the codebaseinfo and load DependentModuleName.skipcode.json
+
+        // validate the license if it is present in the tool or environment; otherwise scan the sources above the given codebase threshold size for approved headers
+        do {
+            if try self.licenseOptions.license?.validateLicense() == nil {
+                let scanSourceStart = Date().timeIntervalSinceReferenceDate
+                let codebaseSize = try await SourceValidator.scanSources(from: sourceURLs)
+                let scanSourceEnd = Date().timeIntervalSinceReferenceDate
+                info("scanned codebase (\(Self.byteCount(for: .init(codebaseSize)))) in (\(Int64((scanSourceEnd - scanSourceStart) * 1000)) ms)")
+            }
+        } catch let e as LicenseError {
+            error(e.localizedDescription, sourceFile: e.sourceFile)
+            throw e
+        }
 
         let transpiler = Transpiler(packageName: packageName, sourceFiles: sources, codebaseInfo: codebaseInfo, preprocessorSymbols: Set(preflightOptions.symbols), plugins: plugins)
         try await transpiler.transpile(handler: handleTranspilation)
@@ -546,7 +563,7 @@ struct TranspileAction: TranspilePhase, StreamingCommand {
 
                 do {
                     let codebaseLoadStart = Date().timeIntervalSinceReferenceDate
-                    print("dependencyCodebaseInfo \(dependencyCodebaseInfo): exists \(fs.exists(dependencyCodebaseInfo))")
+                    trace("dependencyCodebaseInfo \(dependencyCodebaseInfo): exists \(fs.exists(dependencyCodebaseInfo))")
                     let cbdata = try inputSource(dependencyCodebaseInfo).withData { $0 }
                     let cbinfo = try decoder.decode(CodebaseInfo.self, from: cbdata)
                     dependentCodebaseInfos.append(cbinfo)
@@ -867,6 +884,22 @@ extension Transpilation {
     /// Returns the expected Kotlin file name for this transpilation
     var kotlinFileName: String {
         outputFileBaseName + ".kt"
+    }
+}
+
+struct LicenseOptions: ParsableArguments {
+    @Option(help: ArgumentHelp("The license key for transpiling non-free sources", valueName: "SKIP_LICENSE"))
+    var skipLicense: String? = nil // --skip-license SKP657AB7680CA6789F76ABB65975678CDCA34PKS
+
+    /// Returns the license key if it exists. The key format is decrypted and verified, but the expiration date has not yet been checked.
+    ///
+    /// This checks both an explicit license key string, as well as the `SKIP_LICENSE` environment variable.
+    ///
+    /// TODO: also check the root Skip/skip.yml file and/or .env files for the key.
+    var license: LicenseKey? {
+        get throws {
+            try (skipLicense ?? ProcessInfo.processInfo.environment["SKIP_LICENSE"]).flatMap { try LicenseKey(licenseString: $0) }
+        }
     }
 }
 
