@@ -1,5 +1,4 @@
 import Foundation
-import CommonCrypto
 import SkipSyntax
 
 struct SourceValidator {
@@ -60,7 +59,7 @@ struct SourceValidator {
     /// The data was invalid
     case invalidData
     /// A encryption/decryption error
-    case cryptorFailure(status: CCCryptorStatus)
+    case cryptorFailure(status: Int32)
     /// The key that was used to encrypt the license is no longer valid for decryption
     case cryptKeyExpired(date: Date)
     /// The encryption key that created this license has been revoked
@@ -69,6 +68,8 @@ struct SourceValidator {
     case licenseKeyRevoked
     /// The header comment of the source file does not match an approved expression
     case unmatchedHeaders(sourceURLs: [URL], codebaseThreshold: Int)
+    /// This platform does not support the required encryption frameworks
+    case cryptoUnsupported
 
     @usableFromInline var errorDescription: String? {
         switch self {
@@ -92,6 +93,8 @@ struct SourceValidator {
             return "The Skip license needs to be re-generated. Please contact support."
         case .unmatchedHeaders(sourceURLs: let sourceURLs, codebaseThreshold: let codebaseThreshold):
             return "All source files in codebases over \(ByteCountFormatter.string(fromByteCount: .init(codebaseThreshold), countStyle: .memory)) must contain a free software license header which is missing from: \(sourceURLs.map(\.lastPathComponent).formatted(.list(type: .and)))."
+        case .cryptoUnsupported:
+            return "The Skip license cannot be validated on this platform. Please contact support."
         }
     }
 
@@ -140,11 +143,15 @@ struct LicenseKey : Equatable, Codable {
     }
 
     @inlinable init(licenseString: String) throws {
+        #if !canImport(CommonCrypto)
+        throw LicenseError.cryptoUnsupported
+        #else
         let licenseData = try Self.parseLicenseContent(licenseString: licenseString)
         let jsonData = try aes(data: licenseData, encrypt: false)
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .secondsSince1970
         self = try decoder.decode(LicenseKey.self, from: jsonData)
+        #endif
     }
 
     /// Returns the unencrypted JSON-encoded license string
@@ -160,7 +167,11 @@ struct LicenseKey : Equatable, Codable {
     /// Returns the encrypted license string
     @inlinable var licenseKeyString: String {
         get throws {
+            #if !canImport(CommonCrypto)
+            throw LicenseError.cryptoUnsupported
+            #else
             try Self.keyStart + aes(data: licenseJSON.utf8Data, encrypt: true).hexEncodedString().uppercased() + Self.keyEnd
+            #endif
         }
     }
 
@@ -230,6 +241,9 @@ extension UUID {
         Data([uuid.0, uuid.1, uuid.2, uuid.3, uuid.4, uuid.5, uuid.6, uuid.7, uuid.8, uuid.9, uuid.10, uuid.11, uuid.12, uuid.13, uuid.14, uuid.15]).base64EncodedString()
     }
 }
+
+#if canImport(CommonCrypto)
+import CommonCrypto
 
 /// Takes the AES128 base64 key string as a String argument, the Data to encrypt or decrypt, and a boolean flag called encrypt that indicates whether the function should encrypt or decrypt the data. The function returns a Data object containing the encrypted or decrypted data.
 ///
@@ -328,3 +342,5 @@ extension UUID {
     // we've exhaused the keywheel
     throw LicenseError.noKeys
 }
+#endif
+

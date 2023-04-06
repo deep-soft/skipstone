@@ -73,6 +73,7 @@ final class SkipLicenseTests: XCTestCase {
         XCTAssertThrowsError(try LicenseKey(licenseString: "SKPQQPKS"), "invalid payload hex")
         XCTAssertThrowsError(try LicenseKey(licenseString: "SKP00PKS"), "invalid payload data")
 
+        #if canImport(CommonCrypto)
         let license = LicenseKey(id: "com.coolapp.MyApp", expiration: DateComponents(calendar: Calendar.current, year: 2025, month: 1, day: 1).date!)
         let licenseKey = "SKPF156BB3B02FA20AD8259FCD1872B363A3D7EA4FE87060DD3FDAA00B29BC03483241572DDAC842776365F04FB7009EABEPKS"
         XCTAssertEqual(licenseKey, try license.licenseKeyString)
@@ -97,6 +98,7 @@ final class SkipLicenseTests: XCTestCase {
                 return
             }
         }
+        #endif
     }
 
     func testCreateRandomKeys() {
