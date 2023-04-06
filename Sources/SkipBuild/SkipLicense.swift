@@ -4,13 +4,16 @@ import SkipSyntax
 struct SourceValidator {
     /// Scans the sources at the given URLs above a total given codebase size for an approved header comments that match the list of header expressions.
     @discardableResult static func scanSources(from sourceURLs: [URL], codebaseThreshold: Int, headerExpressions: [NSRegularExpression]) async throws -> (size: Int, validate: Bool) {
-        // get the total codebase size (in byted)
+        // get the total codebase size (in bytes)
         let codebaseSize = try sourceURLs.compactMap { try $0.resourceValues(forKeys: [.fileSizeKey]).fileSize }.reduce(0, +)
         if codebaseSize < codebaseThreshold {
             // for small codebases below the threshold don't bother checking anything
             return (codebaseSize, false)
         }
 
+        #if !canImport(CommonCrypto)
+        return (codebaseSize, false)
+        #else
         // we are above the threshold; if we have a license, vallidate it; otherwise scan the code and ensure that it contains an approved head expression
         var unmatchedHeaderURLs: [URL] = []
         for sourceURL in sourceURLs {
@@ -43,6 +46,7 @@ struct SourceValidator {
         }
 
         return (codebaseSize, true)
+        #endif
     }
 }
 
