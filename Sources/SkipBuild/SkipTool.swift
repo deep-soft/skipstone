@@ -491,7 +491,6 @@ struct TranspileAction: TranspilePhase, StreamingCommand {
         let overriddenKotlinFiles = overridden.map({ $0.basename })
         // skip over any source file whose name would match a copied Kotlin file
         let sources = sourceFiles.map(\.sourceFile)
-        let sourceURLs = sourceFiles.map(\.asURL)
 
         // load and merge each of the skip.yml files for the dependent modules
         let (baseSkipConfig, mergedSkipConfig, configMap) = try loadSkipConfig(merge: true)
@@ -508,18 +507,7 @@ struct TranspileAction: TranspilePhase, StreamingCommand {
 
         let codebaseInfo = try loadCodebaseInfo() // initialize the codebaseinfo and load DependentModuleName.skipcode.json
 
-        // validate the license if it is present in the tool or environment; otherwise scan the sources above the given codebase threshold size for approved headers
-        do {
-            if try self.licenseOptions.license?.validateLicense() == nil {
-                let scanSourceStart = Date().timeIntervalSinceReferenceDate
-                let codebaseSize = try await SourceValidator.scanSources(from: sourceURLs)
-                let scanSourceEnd = Date().timeIntervalSinceReferenceDate
-                info("scanned codebase (\(Self.byteCount(for: .init(codebaseSize)))) in (\(Int64((scanSourceEnd - scanSourceStart) * 1000)) ms)")
-            }
-        } catch let e as LicenseError {
-            error(e.localizedDescription, sourceFile: e.sourceFile)
-            throw e
-        }
+        try await validateLicense(sourceURLs: sourceFiles.map(\.asURL))
 
         let transpiler = Transpiler(packageName: packageName, sourceFiles: sources, codebaseInfo: codebaseInfo, preprocessorSymbols: Set(preflightOptions.symbols), plugins: plugins)
         try await transpiler.transpile(handler: handleTranspilation)
@@ -866,6 +854,31 @@ struct TranspileAction: TranspilePhase, StreamingCommand {
 
         return plugins
     }
+
+    // validate the license if it is present in the tool or environment; otherwise scan the sources above the given codebase threshold size for approved headers
+    func validateLicense(sourceURLs: [URL], now: Date = Date.now) async throws {
+        if let license = try self.licenseOptions.license ?? LicenseKey(licenseString: "SKPF156BB3B02FA20AD8259FCD1872B363A3D7EA4FE87060DD3FDAA00B29BC03483241572DDAC842776365F04FB7009EABEPKS") as LicenseKey? {
+            let exp = DateFormatter.localizedString(from: license.expiration, dateStyle: .short, timeStyle: .none)
+            let daysLeft = ceil((license.expiration.timeIntervalSince1970 - now.timeIntervalSince1970) / (12 * 60 * 60))
+            if daysLeft < 0 {
+                error("Skip license expired on \(exp)")
+            } else if daysLeft < 10 {
+                warn("Skip license will expire in \(Int(daysLeft)) day\(Int(daysLeft) == 1 ? "" : "s") on \(exp)")
+            } else {
+                info("Skip license valid through \(exp)")
+            }
+        } else {
+            do {
+                let scanSourceStart = Date().timeIntervalSinceReferenceDate
+                let (codebaseSize, validated) = try await SourceValidator.scanSources(from: sourceURLs)
+                let scanSourceEnd = Date().timeIntervalSinceReferenceDate
+                info("scanned codebase (\(Self.byteCount(for: .init(codebaseSize)))) in (\(Int64((scanSourceEnd - scanSourceStart) * 1000)) ms)" + (validated ? " and verified free software header comments" : ""))
+            } catch let e as LicenseError {
+                error(e.localizedDescription, sourceFile: e.sourceFile)
+            }
+        }
+    }
+
 }
 
 extension Source.FilePath {

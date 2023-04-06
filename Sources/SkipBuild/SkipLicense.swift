@@ -4,12 +4,12 @@ import SkipSyntax
 
 struct SourceValidator {
     /// Scans the sources at the given URLs above a total given codebase size for an approved header comments.
-    @discardableResult static func scanSources(from sourceURLs: [URL], codebaseThreshold: Int = 10 * 1024) async throws -> Int {
+    @discardableResult static func scanSources(from sourceURLs: [URL], codebaseThreshold: Int = 10 * 1024) async throws -> (size: Int, validate: Bool) {
         // get the total codebase size (in byted)
         let codebaseSize = try sourceURLs.compactMap { try $0.resourceValues(forKeys: [.fileSizeKey]).fileSize }.reduce(0, +)
         if codebaseSize < codebaseThreshold {
             // for small codebases below the threshold don't bother checking anything
-            return codebaseSize
+            return (codebaseSize, false)
         }
 
         // the list of header match expressions that we permit for codebases above the given threshold
@@ -46,10 +46,10 @@ struct SourceValidator {
 
         if !unmatchedHeaderURLs.isEmpty {
             // report on all the files that were missing the requisite headers
-            throw LicenseError.unmatchedHeaders(sourceURLs: unmatchedHeaderURLs)
+            throw LicenseError.unmatchedHeaders(sourceURLs: unmatchedHeaderURLs, codebaseThreshold: codebaseThreshold)
         }
 
-        return codebaseSize
+        return (codebaseSize, true)
     }
 }
 
@@ -74,7 +74,7 @@ struct SourceValidator {
     /// The specific license key has been added to the revocation list
     case licenseKeyRevoked
     /// The header comment of the source file does not match an approved expression
-    case unmatchedHeaders(sourceURLs: [URL])
+    case unmatchedHeaders(sourceURLs: [URL], codebaseThreshold: Int)
 
     @usableFromInline var errorDescription: String? {
         switch self {
@@ -96,8 +96,8 @@ struct SourceValidator {
             return "The Skip license needs to be re-constructed. Please contact support."
         case .licenseKeyRevoked:
             return "The Skip license needs to be re-generated. Please contact support."
-        case .unmatchedHeaders(sourceURLs: let sourceURLs):
-            return "The source files \(sourceURLs.map(\.lastPathComponent).formatted(.list(type: .and))) did not contain license header comments matching the list of approved Skip licenses, which is required for codebases above the licensing threshold."
+        case .unmatchedHeaders(sourceURLs: let sourceURLs, codebaseThreshold: let codebaseThreshold):
+            return "All source files in codebases over \(ByteCountFormatter.string(fromByteCount: .init(codebaseThreshold), countStyle: .memory)) must contain a free software license header which is missing from: \(sourceURLs.map(\.lastPathComponent).formatted(.list(type: .and)))."
         }
     }
 
@@ -113,7 +113,7 @@ struct SourceValidator {
     /// The source file that should be associated with this error, if any
     var sourceFile: Source.FilePath? {
         switch self {
-        case .unmatchedHeaders(let urls):
+        case .unmatchedHeaders(let urls, _):
             guard let url = urls.first else {
                 return nil
             }
@@ -167,13 +167,6 @@ struct LicenseKey : Equatable, Codable {
     @inlinable var licenseKeyString: String {
         get throws {
             try Self.keyStart + aes(data: licenseJSON.utf8Data, encrypt: true).hexEncodedString().uppercased() + Self.keyEnd
-        }
-    }
-
-    func validateLicense(withDate date: Date = .now) throws {
-        // validates the license by ensuring the date is not beyond the expiration
-        if date > expiration {
-            throw LicenseError.licenseExpired(expiration: expiration)
         }
     }
 
@@ -255,7 +248,7 @@ extension UUID {
 /// - Returns: the encrypted or decrypted data
 @inlinable func aes(keyBase64 keyString: String? = nil, data: Data, encrypt: Bool, currentDate: Date = Date()) throws -> Data {
     // a wheel of AES-128 encryption/decryption keys that is meant to be rotated periodically in conjunction with the expiration scheme of the license that it encrypts
-    // The most recent key will always be used to decrypt data, but older keys will be attempted for decryption. This allows older (and possibly compromised) keys to eventually be rotated out and expired after such time that any license that would have been encoded would have been expired anyway.
+    // The most recent key will always be used to encrypt data, but older keys will be attempted for decryption. This allows older (and possibly compromised) keys to eventually be rotated out and expired after such time that any license that would have been encoded would have been expired anyway.
     // The active (i.e., most recent) key will be the one the order fulfillment provider should be configured to issue for future orders (e.g., https://fastspring.com/docs/license-key-fulfillments/#anchor-script)
     let keyWheel = [
         // revoked keys; any license encrypted with one of these keys will be considered invalid and the user will need to contact the vendor to obtain a new key
