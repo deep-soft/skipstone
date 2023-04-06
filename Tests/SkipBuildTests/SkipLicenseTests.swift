@@ -1,5 +1,6 @@
 import XCTest
 @testable import SkipBuild
+#if canImport(CryptoKit)
 import CryptoKit
 
 
@@ -95,3 +96,6 @@ extension Data {
 enum CryptoError : Error {
     case decryptionFailed
 }
+
+#endif
+
