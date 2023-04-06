@@ -2,23 +2,6 @@ import XCTest
 @testable import SkipBuild
 import SkipSyntax
 
-struct LicenseKey : Codable {
-    let appid: String
-    let expiration: Date
-
-    /// Returns the encoded license string
-    var licenseString: String? {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        return try? encoder.encode(self).utf8String
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case appid = "a"
-        case expiration = "x"
-    }
-}
-
 final class SkipLicenseTests: XCTestCase {
     /// Verified that the source header scanner will check for the expected expressions.
     func testSourceHeaders() async throws {
