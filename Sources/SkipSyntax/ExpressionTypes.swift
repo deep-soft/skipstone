@@ -569,8 +569,14 @@ class FunctionCall: Expression {
         case .identifier:
             let identifier = function as! Identifier
             identifier.isCalledAsFunction = true
-            baseType = nil
-            name = identifier.name
+            if identifier.generics.isEmpty {
+                baseType = nil
+                name = identifier.name
+            } else {
+                // If generics are specified, assume the identifier is a type name and this call is a constructor
+                baseType = TypeSignature.for(name: identifier.name, genericTypes: identifier.generics)
+                name = "init"
+            }
         case .memberAccess:
             let memberAccess = function as! MemberAccess
             memberAccess.isCalledAsFunction = true
@@ -883,10 +889,8 @@ class MemberAccess: Expression {
         if let base {
             base.inferTypes(context: context, expecting: .none)
             baseType = baseType.or(base.inferredType)
-        } else if case .metaType = expecting {
-            baseType = baseType.or(expecting)
         } else {
-            baseType = baseType.or(.metaType(expecting))
+            baseType = baseType.or(expecting.asMetaType(true).asOptional(false))
         }
         memberType = context.member(member, in: baseType).withGenerics(generics).or(expecting)
         return context
@@ -1534,8 +1538,8 @@ class Try: Expression {
     }
 
     override func inferTypes(context: TypeInferenceContext, expecting: TypeSignature) -> TypeInferenceContext {
-        if kind == .optional, case .optional(let type) = expecting {
-            return trying.inferTypes(context: context, expecting: type)
+        if kind == .optional {
+            return trying.inferTypes(context: context, expecting: expecting.asOptional(false))
         } else {
             return trying.inferTypes(context: context, expecting: expecting)
         }
@@ -1625,7 +1629,7 @@ class TypeLiteral: Expression {
     }
 
     override var inferredType: TypeSignature {
-        return .metaType(literal)
+        return literal.asMetaType(true)
     }
 
     override var prettyPrintAttributes: [PrettyPrintTree] {
