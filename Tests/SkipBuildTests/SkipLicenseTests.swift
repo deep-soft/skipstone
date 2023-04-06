@@ -1,8 +1,6 @@
 import XCTest
 @testable import SkipBuild
-#if canImport(CryptoKit)
-import CryptoKit
-
+import SkipSyntax
 
 struct LicenseKey : Codable {
     let appid: String
@@ -21,81 +19,118 @@ struct LicenseKey : Codable {
     }
 }
 
-typealias CipherSuite = AES.GCM
-//typealias CipherSuite = ChaChaPoly
-
 final class SkipLicenseTests: XCTestCase {
-    public func testLicenseKeys() throws {
-        let license = LicenseKey(appid: "com.coolapp.MyApp", expiration: Date(timeIntervalSinceReferenceDate: 100_000_000))
-        print("License:", license.licenseString!)
-
-        let licenseData = Data(license.licenseString!.utf8)
-
-        let keys = [
-            SymmetricKey(data: Data("A080D0DA98B5405D86FB5D1ECAFC7963".utf8)),
-            SymmetricKey(data: Data("B0000000000000000000000000000000".utf8)),
-            SymmetricKey(data: Data("C0000000000000000000000000000000".utf8)),
-            SymmetricKey(data: Data("D0000000000000000000000000000000".utf8)),
-            SymmetricKey(data: Data("E0000000000000000000000000000000".utf8)),
-        ]
-
-        let sealedBox: CipherSuite.SealedBox
-
-        do {
-            let encryptKey = keys.randomElement()!
-            print(encryptKey.bitCount)
-
-            // Use AES-GCM to encrypt the plaintext message with the symmetric key
-            sealedBox = try CipherSuite.seal(licenseData, using: encryptKey)
-
-            // Extract the ciphertext from the sealed box
-            let ciphertext = sealedBox.ciphertext
-            print("Encrypted license: \(ciphertext.hexEncodedString())")
-
-            // Extract the nonce from the sealed box
-            let nonce = sealedBox.nonce
-            print("Nonce: \(nonce)")
-
-            // Extract the tag from the sealed box
-            let tag = sealedBox.tag
-            print("Tag: \(tag.hexEncodedString())")
+    /// Verified that the source header scanner will check for the expected expressions.
+    func testSourceHeaders() async throws {
+        // no source header
+        try await sourceCheck(expectFailure: true, swift: """
+        // Header comment
+        import Foundation
+        import XCTest
+        
+        // Type comment
+        public struct XYZ {
         }
+        """)
+
+        try await sourceCheck(expectFailure: true, swift: """
+        // XYZ General Public License
+        public struct XYZ { }
+        """)
+
+        try await sourceCheck(expectFailure: true, swift: """
+        // Some commercial header
+        public struct XYZ { }
+        """)
+
+        try await sourceCheck(expectFailure: true, swift: """
+        public struct XYZ { }
+        """)
+
+        try await sourceCheck(expectFailure: false, swift: """
+        // GNU General Public License
+        public struct XYZ { }
+        """)
+
+        try await sourceCheck(expectFailure: false, swift: """
+        // GNU Affero General Public License
+        public struct XYZ { }
+        """)
+
+        try await sourceCheck(expectFailure: false, swift: """
+        // GNU Limited
+        //     General Public License
+        public struct XYZ { }
+        """)
+    }
+
+    func sourceCheck(expectFailure: Bool, swift: String) async throws {
+        let srcFile = try tmpFile(named: "Source.swift", contents: swift)
+
+        // first make sure that everything below the codebase threshold passes regardless of the header comment
+        try await SourceValidator.scanSources(from: [srcFile], codebaseThreshold: 1_000_000_000, headerExpressions: [])
 
         do {
-            for key in keys.reversed() {
-                do {
-                    // Use AES-GCM to decrypt the ciphertext message with the symmetric key and the nonce and tag from the sealed box
-                    let decryptedData = try CipherSuite.open(sealedBox, using: key)
-
-                    // Convert the decrypted data to a string
-                    guard let decryptedString = String(data: decryptedData, encoding: .utf8) else {
-                        throw CryptoError.decryptionFailed
-                    }
-
-                    print("Decrypted plaintext message: \(decryptedString)")
-                } catch {
-                    // try the next key
-                }
+            // scan with a minimal codebase threshold to activate the header scan
+            try await SourceValidator.scanSources(from: [srcFile], codebaseThreshold: 1, headerExpressions: [try! NSRegularExpression(pattern: "GNU.*General.Public.License")])
+            if expectFailure {
+                XCTFail("Expected error")
+            }
+        } catch {
+            if !expectFailure {
+                XCTFail("Unexpected error: \(error)")
             }
         }
     }
-}
 
-extension String {
-    func hexEncodedString() -> String {
-        (data(using: .utf8) ?? Data()).hexEncodedString()
+    func testLicenseKeys() throws {
+        XCTAssertThrowsError(try LicenseKey(licenseString: ""), "empty license key")
+        XCTAssertThrowsError(try LicenseKey(licenseString: "F156BB3B02FA20AD8259FCD1872B363A3D7EA4FE87060DD3FDAA00B29BC03483241572DDAC842776365F04FB7009EABE"), "license key with invalid prefix/suffix")
+        XCTAssertThrowsError(try LicenseKey(licenseString: "SKPPKS"), "empty payload")
+        XCTAssertThrowsError(try LicenseKey(licenseString: "SKPQQPKS"), "invalid payload hex")
+        XCTAssertThrowsError(try LicenseKey(licenseString: "SKP00PKS"), "invalid payload data")
+
+        let license = LicenseKey(id: "com.coolapp.MyApp", expiration: DateComponents(calendar: Calendar.current, year: 2025, month: 1, day: 1).date!)
+        let licenseKey = "SKPF156BB3B02FA20AD8259FCD1872B363A3D7EA4FE87060DD3FDAA00B29BC03483241572DDAC842776365F04FB7009EABEPKS"
+        XCTAssertEqual(licenseKey, try license.licenseKeyString)
+        let license2 = try LicenseKey(licenseString: licenseKey)
+        XCTAssertEqual(license, license2)
+
+        // random blob of data
+        let data = Data((0...(Int.random(in: 10...100_000))).map { _ in
+            UInt8.random(in: UInt8.min...UInt8.max)
+        })
+
+        let encrypted = try aes(data: data, encrypt: true)
+        XCTAssertNotEqual(data, encrypted)
+
+        let decrypted = try aes(data: encrypted, encrypt: false)
+        XCTAssertEqual(data, decrypted)
+
+        // try the license as if we were fast-forwarded to a date when it becomes invalid
+        XCTAssertThrowsError(try aes(data: encrypted, encrypt: false, currentDate: DateComponents(calendar: Calendar.current, year: 2030, month: 1, day: 1).date!), "expected key expiration error") { error in
+            guard case LicenseError.cryptKeyExpired = error else {
+                XCTFail("expected expiration error but got: \(error)")
+                return
+            }
+        }
     }
-}
 
-extension Data {
-    func hexEncodedString() -> String {
-        map { String(format: "%02hhx", $0) }.joined()
+    func testCreateRandomKeys() {
+        for _ in 1...25 {
+            //print(UUID().base64String)
+        }
     }
+
+    /// Creates a temporary file with the given name and optional contents.
+    public func tmpFile(named fileName: String, contents: String? = nil) throws -> URL {
+        let tmpDir = URL(fileURLWithPath: UUID().uuidString, isDirectory: true, relativeTo: URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true))
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        let tmpFile = URL(fileURLWithPath: fileName, isDirectory: false, relativeTo: tmpDir)
+        if let contents = contents {
+            try contents.write(to: tmpFile, atomically: true, encoding: .utf8)
+        }
+        return tmpFile
+    }
+
 }
-
-enum CryptoError : Error {
-    case decryptionFailed
-}
-
-#endif
-
