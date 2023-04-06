@@ -96,7 +96,7 @@ struct SourceValidator {
         case .licenseKeyRevoked:
             return "The Skip license needs to be re-generated. Please contact support."
         case .unmatchedHeaders(sourceURLs: let sourceURLs, codebaseThreshold: let codebaseThreshold):
-            return "All source files in codebases over \(ByteCountFormatter.string(fromByteCount: .init(codebaseThreshold), countStyle: .memory)) must contain a free software license header which is missing from: \(sourceURLs.map(\.lastPathComponent).formatted(.list(type: .and)))."
+            return "All source files in codebases over \(ByteCountFormatter.string(fromByteCount: .init(codebaseThreshold), countStyle: .memory)) must contain a free software license header which is missing from: \(sourceURLs.map(\.lastPathComponent).joined(", "))."
         case .cryptoUnsupported:
             return "The Skip license cannot be validated on this platform. Please contact support."
         }
