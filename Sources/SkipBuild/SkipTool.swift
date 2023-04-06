@@ -855,27 +855,47 @@ struct TranspileAction: TranspilePhase, StreamingCommand {
         return plugins
     }
 
-    // validate the license if it is present in the tool or environment; otherwise scan the sources above the given codebase threshold size for approved headers
-    func validateLicense(sourceURLs: [URL], now: Date = Date.now) async throws {
-        if let license = try self.licenseOptions.license ?? LicenseKey(licenseString: "SKPF156BB3B02FA20AD8259FCD1872B363A3D7EA4FE87060DD3FDAA00B29BC03483241572DDAC842776365F04FB7009EABEPKS") as LicenseKey? {
-            let exp = DateFormatter.localizedString(from: license.expiration, dateStyle: .short, timeStyle: .none)
-            let daysLeft = ceil((license.expiration.timeIntervalSince1970 - now.timeIntervalSince1970) / (12 * 60 * 60))
-            if daysLeft < 0 {
-                error("Skip license expired on \(exp)")
-            } else if daysLeft < 10 {
-                warn("Skip license will expire in \(Int(daysLeft)) day\(Int(daysLeft) == 1 ? "" : "s") on \(exp)")
+    /// Validate the license key if it is present in the tool or environment; otherwise scan the sources above the given codebase threshold size for approved headers
+    func validateLicense(sourceURLs: [URL], against now: Date = Date.now) async throws {
+        // the total size of all input source files, below which we will not enforce either license key or valid header comments
+        // this is meant to be large enough to accomodate simple demos and experiments without requiring any license
+        let codebaseThresholdSize: Int = 10 * 1024
+
+        // the list of header match expressions that we permit for codebases above the given threshold
+        let validLicenseHeaders = [
+            try! NSRegularExpression(pattern: ".*GNU.*General Public License.*"),
+        ]
+
+        /// Loads the `.skip.yml` at the root of the project and checks for a "skip-license" key
+        func parseLicenseConfig() throws -> String? {
+            try YAML.parse(Data(contentsOf: URL(fileURLWithPath: ".skip.yml")))["skip-license"]?.string
+        }
+
+        let licenseString = licenseOptions.skipLicense ?? ProcessInfo.processInfo.environment["SKIP_LICENSE"] ?? (try? parseLicenseConfig())
+
+        do {
+            let license = try licenseString.flatMap { try LicenseKey(licenseString: $0) }
+
+            if let license = license {
+                let exp = DateFormatter.localizedString(from: license.expiration, dateStyle: .short, timeStyle: .none)
+                let daysLeft = Int(ceil(license.expiration.timeIntervalSince(now) / (12 * 60 * 60)))
+                if daysLeft < 0 {
+                    error("Skip license expired on \(exp)")
+                } else if daysLeft < 10 { // warn when the license is about to expire
+                    warn("Skip license will expire in \(daysLeft) day\(daysLeft == 1 ? "" : "s") on \(exp)")
+                } else {
+                    info("Skip license valid through \(exp)")
+                }
             } else {
-                info("Skip license valid through \(exp)")
-            }
-        } else {
-            do {
                 let scanSourceStart = Date().timeIntervalSinceReferenceDate
-                let (codebaseSize, validated) = try await SourceValidator.scanSources(from: sourceURLs)
+                let (codebaseSize, validated) = try await SourceValidator.scanSources(from: sourceURLs, codebaseThreshold: codebaseThresholdSize, headerExpressions: validLicenseHeaders)
                 let scanSourceEnd = Date().timeIntervalSinceReferenceDate
-                info("scanned codebase (\(Self.byteCount(for: .init(codebaseSize)))) in (\(Int64((scanSourceEnd - scanSourceStart) * 1000)) ms)" + (validated ? " and verified free software header comments" : ""))
-            } catch let e as LicenseError {
-                error(e.localizedDescription, sourceFile: e.sourceFile)
+                info("Codebase (\(Self.byteCount(for: .init(codebaseSize)))) scanned in (\(Int64((scanSourceEnd - scanSourceStart) * 1000)) ms)" + (validated ? " for free software license headers" : ""))
             }
+        } catch let e as LicenseError {
+            // issue an error with the offending file
+            error(e.localizedDescription, sourceFile: e.sourceFile)
+            throw e
         }
     }
 
@@ -903,17 +923,6 @@ extension Transpilation {
 struct LicenseOptions: ParsableArguments {
     @Option(help: ArgumentHelp("The license key for transpiling non-free sources", valueName: "SKIP_LICENSE"))
     var skipLicense: String? = nil // --skip-license SKP657AB7680CA6789F76ABB65975678CDCA34PKS
-
-    /// Returns the license key if it exists. The key format is decrypted and verified, but the expiration date has not yet been checked.
-    ///
-    /// This checks both an explicit license key string, as well as the `SKIP_LICENSE` environment variable.
-    ///
-    /// TODO: also check the root Skip/skip.yml file and/or .env files for the key.
-    var license: LicenseKey? {
-        get throws {
-            try (skipLicense ?? ProcessInfo.processInfo.environment["SKIP_LICENSE"]).flatMap { try LicenseKey(licenseString: $0) }
-        }
-    }
 }
 
 extension AbsolutePath {
