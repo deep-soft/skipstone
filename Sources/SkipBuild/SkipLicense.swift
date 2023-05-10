@@ -96,7 +96,12 @@ struct SourceValidator {
         case .licenseKeyRevoked:
             return "The Skip license needs to be re-generated. Please contact support."
         case .unmatchedHeaders(sourceURLs: let sourceURLs, codebaseThreshold: let codebaseThreshold):
-            return "All source files in codebases over \(ByteCountFormatter.string(fromByteCount: .init(codebaseThreshold), countStyle: .memory)) must contain a free software license header which is missing from: \(sourceURLs.map(\.lastPathComponent).joined(separator: ","))."
+            return """
+                All source files in codebases over \(ByteCountFormatter.string(fromByteCount: .init(codebaseThreshold), countStyle: .memory)) must contain a free software license header which is missing from: \(sourceURLs.map(\.lastPathComponent).joined(separator: ",")). For example, the LGPL license header:
+                // This is free software: you can redistribute and/or modify it
+                // under the terms of the GNU Lesser General Public License 3.0
+                // as published by the Free Software Foundation https://fsf.org
+                """
         case .cryptoUnsupported:
             return "The Skip license cannot be validated on this platform. Please contact support."
         }
