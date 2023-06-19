@@ -570,7 +570,7 @@ final class TypeDeclarationTests: XCTestCase {
         """, kotlin: """
         internal open class C<T, U> {
         }
-        internal fun <T, U> C<T, U>.f(p: T) where T: P = Unit
+        internal inline fun <reified T, reified U> C<T, U>.f(p: T) where T: P = Unit
         """)
 
         try await check(supportingSwift: """
@@ -592,7 +592,7 @@ final class TypeDeclarationTests: XCTestCase {
         }
         internal val <U> C<Int, U>.v: U? where U: P
             get() = null
-        internal fun <U, V> C<Int, U>.f(p1: U, p2: V): Int where U: P, V: P = 1
+        internal inline fun <reified U, reified V> C<Int, U>.f(p1: U, p2: V): Int where U: P, V: P = 1
         """)
 
         try await checkProducesMessage(swift: """

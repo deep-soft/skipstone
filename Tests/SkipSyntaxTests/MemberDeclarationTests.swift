@@ -143,7 +143,7 @@ final class MemberDeclarationTests: XCTestCase {
             }
         }
         """, kotlin: """
-        internal fun <T> C.Companion.staticFunc(p: T): T = Unit
+        internal inline fun <reified T> C.Companion.staticFunc(p: T): T = Unit
         """)
     }
 
@@ -1047,14 +1047,14 @@ final class MemberDeclarationTests: XCTestCase {
         func f<T, U>(a: T, b: U) -> T? {
         }
         """, kotlin: """
-        internal fun <T, U> f(a: T, b: U): T? = Unit
+        internal inline fun <reified T, reified U> f(a: T, b: U): T? = Unit
         """)
 
         try await check(swift: """
         func f<T: I, U>(a: T, b: U) -> Int where U: J {
         }
         """, kotlin: """
-        internal fun <T, U> f(a: T, b: U): Int where T: I, U: J = Unit
+        internal inline fun <reified T, reified U> f(a: T, b: U): Int where T: I, U: J = Unit
         """)
     }
 
