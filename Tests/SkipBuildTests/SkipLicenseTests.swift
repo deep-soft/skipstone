@@ -68,6 +68,29 @@ final class SkipLicenseTests: XCTestCase {
     }
 
     func testLicenseKeys() throws {
+        func date(year: Int, month: Int, day: Int) -> Date! {
+            DateComponents(calendar: Calendar.current, year: year, month: month, day: day).date
+        }
+
+        XCTAssertEqual("SKP26CCCD7271D3FAF09E9A07A2B9D7E0603927934E2A57BC067395D618FF4AC4BBPKS", try LicenseKey(id: "*", expiration: date(year: 2023, month: 8, day: 1)).licenseKeyString)
+        XCTAssertEqual("SKP26CCCD7271D3FAF09E9A07A2B9D7E0603E5F4462A815DF89A9A2B8AF340620E9PKS", try LicenseKey(id: "*", expiration: date(year: 2023, month: 9, day: 1)).licenseKeyString)
+        XCTAssertEqual("SKP26CCCD7271D3FAF09E9A07A2B9D7E0604A0AEE6BAE4D50A0BE9B235F77934098PKS", try LicenseKey(id: "*", expiration: date(year: 2023, month: 10, day: 1)).licenseKeyString)
+        XCTAssertEqual("SKP26CCCD7271D3FAF09E9A07A2B9D7E060FED3EB647598C51389F405AB0E24E101PKS", try LicenseKey(id: "*", expiration: date(year: 2023, month: 11, day: 1)).licenseKeyString)
+        XCTAssertEqual("SKP1E37E619FF079E0D7B0537A3A12F759D0861EFE2B32AA9B84775EFBCB692FE88PKS", try LicenseKey(id: "*", expiration: date(year: 2023, month: 12, day: 1)).licenseKeyString)
+
+        XCTAssertEqual("SKP1E37E619FF079E0D7B0537A3A12F759D4542BD1926D17A039A058AE2822BF720PKS", try LicenseKey(id: "*", expiration: date(year: 2024, month: 1, day: 1)).licenseKeyString)
+        XCTAssertEqual("SKP1E37E619FF079E0D7B0537A3A12F759D48C0ACB5AF3A7FF1F040547C7F7C6CC5PKS", try LicenseKey(id: "*", expiration: date(year: 2024, month: 2, day: 1)).licenseKeyString)
+        XCTAssertEqual("SKP1E37E619FF079E0D7B0537A3A12F759DF90A2BCD55A2D986D14BB3AF8A43F69FPKS", try LicenseKey(id: "*", expiration: date(year: 2024, month: 3, day: 1)).licenseKeyString)
+        XCTAssertEqual("SKP1E37E619FF079E0D7B0537A3A12F759DDA60EF2E4E7AB916B43F4750477412BAPKS", try LicenseKey(id: "*", expiration: date(year: 2024, month: 4, day: 1)).licenseKeyString)
+        XCTAssertEqual("SKP1E37E619FF079E0D7B0537A3A12F759D495DF6BE50F104179294230F7E220F94PKS", try LicenseKey(id: "*", expiration: date(year: 2024, month: 5, day: 1)).licenseKeyString)
+        XCTAssertEqual("SKP1E37E619FF079E0D7B0537A3A12F759DA27710CA8216BBF4F18FDDCDD257AF86PKS", try LicenseKey(id: "*", expiration: date(year: 2024, month: 6, day: 1)).licenseKeyString)
+        XCTAssertEqual("SKP1E37E619FF079E0D7B0537A3A12F759DB268A17E3E1FDE90338D03B0C1FE790EPKS", try LicenseKey(id: "*", expiration: date(year: 2024, month: 7, day: 1)).licenseKeyString)
+        XCTAssertEqual("SKP1E37E619FF079E0D7B0537A3A12F759DA791F0D0D768DA61AEE75E0BDC8889D5PKS", try LicenseKey(id: "*", expiration: date(year: 2024, month: 8, day: 1)).licenseKeyString)
+        XCTAssertEqual("SKP1E37E619FF079E0D7B0537A3A12F759D719C1155288FC3FF2EF7F06A4C204A79PKS", try LicenseKey(id: "*", expiration: date(year: 2024, month: 9, day: 1)).licenseKeyString)
+        XCTAssertEqual("SKP1E37E619FF079E0D7B0537A3A12F759D27CD1E102598B3C40EEFC38A865C1944PKS", try LicenseKey(id: "*", expiration: date(year: 2024, month: 10, day: 1)).licenseKeyString)
+        XCTAssertEqual("SKP1E37E619FF079E0D7B0537A3A12F759DA74C25D1454E770454AD36AE548CBFF7PKS", try LicenseKey(id: "*", expiration: date(year: 2024, month: 11, day: 1)).licenseKeyString)
+        XCTAssertEqual("SKP1E37E619FF079E0D7B0537A3A12F759D997406FA0ACF49BD195B365CDC9F99C2PKS", try LicenseKey(id: "*", expiration: date(year: 2024, month: 12, day: 1)).licenseKeyString)
+
         XCTAssertThrowsError(try LicenseKey(licenseString: ""), "empty license key")
         XCTAssertThrowsError(try LicenseKey(licenseString: "F156BB3B02FA20AD8259FCD1872B363A3D7EA4FE87060DD3FDAA00B29BC03483241572DDAC842776365F04FB7009EABE"), "license key with invalid prefix/suffix")
         XCTAssertThrowsError(try LicenseKey(licenseString: "SKPPKS"), "empty payload")
@@ -76,7 +99,9 @@ final class SkipLicenseTests: XCTestCase {
 
         let license = LicenseKey(id: "com.coolapp.MyApp", expiration: DateComponents(calendar: Calendar.current, year: 2025, month: 1, day: 1).date!)
         let licenseKey = "SKPF156BB3B02FA20AD8259FCD1872B363A3D7EA4FE87060DD3FDAA00B29BC03483241572DDAC842776365F04FB7009EABEPKS"
+
         XCTAssertEqual(licenseKey, try license.licenseKeyString)
+
         let license2 = try LicenseKey(licenseString: licenseKey)
         XCTAssertEqual(license, license2)
 
@@ -97,12 +122,6 @@ final class SkipLicenseTests: XCTestCase {
                 XCTFail("expected expiration error but got: \(error)")
                 return
             }
-        }
-    }
-
-    func testCreateRandomKeys() {
-        for _ in 1...25 {
-            //print(UUID().base64String)
         }
     }
 
