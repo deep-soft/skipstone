@@ -319,7 +319,7 @@ func aes(keyBase64 keyString: String? = nil, data: Data, encrypt: Bool, currentD
     ]
 
     func date(day: Int = 1, month: Int, year: Int) -> Date {
-        DateComponents(calendar: Calendar.current, timeZone: .gmt, year: year, month: month, day: day).date!
+        DateComponents(calendar: Calendar.current, timeZone: TimeZone.gmt, year: year, month: month, day: day).date!
     }
 
     // the shared initialization vector
