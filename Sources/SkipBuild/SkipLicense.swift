@@ -29,11 +29,13 @@ struct SourceValidator {
             defer { try? handle.close() }
 
             handle.iterateLines { line in
-                if !line.hasPrefix("//") {
-                    return false // only scan up to the final opening comment
-                } else {
+                if line.trimmingCharacters(in: .whitespaces).isEmpty {
+                    return true // skip empty lines
+                } else if line.hasPrefix("//") {
                     headers.append(line.drop(while: { $0 == "/" }).trimmingCharacters(in: .whitespacesAndNewlines))
                     return true
+                } else {
+                    return false // only scan up to the final opening comment
                 }
             }
 

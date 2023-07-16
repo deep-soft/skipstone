@@ -46,6 +46,7 @@ final class SkipLicenseTests: XCTestCase {
         """)
 
         try await sourceCheck(expectFailure: false, swift: """
+        
         // GNU Lesser
         //     General Public License
         public struct XYZ { }
@@ -62,11 +63,11 @@ final class SkipLicenseTests: XCTestCase {
         let srcFile = try tmpFile(named: "Source.swift", contents: swift)
 
         // first make sure that everything below the codebase threshold passes regardless of the header comment
-        try await SourceValidator.scanSources(from: [srcFile], codebaseThreshold: 1_000_000_000, headerExpressions: [])
+        try SourceValidator.scanSources(from: [srcFile], codebaseThreshold: 1_000_000_000, headerExpressions: [])
 
         do {
             // scan with a minimal codebase threshold to activate the header scan
-            try await SourceValidator.scanSources(from: [srcFile], codebaseThreshold: 1)
+            try SourceValidator.scanSources(from: [srcFile], codebaseThreshold: 1)
             if expectFailure {
                 XCTFail("Expected error")
             }
