@@ -13,7 +13,7 @@ internal let validLicenseHeaders = [
 
 struct SourceValidator {
     /// Scans the sources at the given URLs above a total given codebase size for approved header comments that match the list of header expressions.
-    @discardableResult static func scanSources(from sourceURLs: [URL], codebaseThreshold: Int, headerExpressions: [NSRegularExpression] = validLicenseHeaders) async throws -> (size: Int, validate: Bool) {
+    @discardableResult static func scanSources(from sourceURLs: [URL], codebaseThreshold: Int, headerExpressions: [NSRegularExpression] = validLicenseHeaders) throws -> (size: Int, validate: Bool) {
         // get the total codebase size (in bytes)
         let codebaseSize = try sourceURLs.compactMap { try $0.resourceValues(forKeys: [.fileSizeKey]).fileSize }.reduce(0, +)
         if codebaseSize < codebaseThreshold {
@@ -27,11 +27,13 @@ struct SourceValidator {
             var headers: [String] = []
             let handle = try FileHandle(forReadingFrom: sourceURL)
             defer { try? handle.close() }
-            for try await line in handle.bytes.lines {
+
+            handle.iterateLines { line in
                 if !line.hasPrefix("//") {
-                    break // only scan up to the final opening comment
+                    return false // only scan up to the final opening comment
                 } else {
                     headers.append(line.drop(while: { $0 == "/" }).trimmingCharacters(in: .whitespacesAndNewlines))
+                    return true
                 }
             }
 
@@ -56,6 +58,43 @@ struct SourceValidator {
     }
 }
 
+extension FileHandle {
+    /// Iterate over the lines in the file until the given closure returning false.
+    /// This can be used instead of `bytes.lines` for platforms that do not support it (Linux).
+    func iterateLines(with closure: (String) -> Bool) {
+        let nl = Data("\n".utf8)
+        let chunkSize = 1024
+        var buffer = Data(capacity: chunkSize)
+        var shouldContinue = true
+
+        while shouldContinue {
+            let data = readData(ofLength: chunkSize)
+            if data.count == 0 {
+                // End of file reached
+                break
+            }
+
+            buffer.append(data)
+
+            while let range = buffer.range(of: nl) {
+                let lineData = buffer.subdata(in: 0..<range.lowerBound)
+
+                if let line = String(data: lineData, encoding: .utf8) {
+                    shouldContinue = closure(line)
+                } else {
+                    //print("Failed to convert line data to string.")
+                }
+
+                buffer.removeSubrange(0..<range.upperBound)
+
+                if !shouldContinue {
+                    // Halt iteration
+                    break
+                }
+            }
+        }
+    }
+}
 
 @usableFromInline enum LicenseError: LocalizedError {
     /// The license did not start and end with the necessary strings
