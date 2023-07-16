@@ -1,9 +1,9 @@
 import Foundation
 import SkipSyntax
 #if canImport(Crypto)
-import Crypto
+@_implementationOnly import Crypto
 #else
-import CryptoKit
+@_implementationOnly import CryptoKit
 #endif
 
 /// the list of header match expressions that we permit for codebases above the given threshold
@@ -28,12 +28,10 @@ struct SourceValidator {
             let handle = try FileHandle(forReadingFrom: sourceURL)
             defer { try? handle.close() }
 
-            handle.iterateLines { line in
-                if line.trimmingCharacters(in: .whitespaces).isEmpty {
-                    return true // skip empty lines
-                } else if line.hasPrefix("//") {
+            try handle.iterateLines { line in
+                if line.hasPrefix("//") {
                     headers.append(line.drop(while: { $0 == "/" }).trimmingCharacters(in: .whitespacesAndNewlines))
-                    return true
+                    return headers.count < 15 // only scan the first 15 lines
                 } else {
                     return false // only scan up to the final opening comment
                 }
@@ -63,9 +61,10 @@ struct SourceValidator {
 extension FileHandle {
     /// Iterate over the lines in the file until the given closure returning false.
     /// This can be used instead of `bytes.lines` for platforms that do not support it (Linux).
-    func iterateLines(with closure: (String) -> Bool) {
-        let nl = Data("\n".utf8)
-        let chunkSize = 1024
+    func iterateLines(separator: String = "\n", encoding: String.Encoding = .utf8, chunkSize: Int = 1024, with closure: (String) throws -> Bool) throws {
+        guard let nl = separator.data(using: .utf8) else {
+            throw CocoaError(.formatting)
+        }
         var buffer = Data(capacity: chunkSize)
         var shouldContinue = true
 
@@ -81,8 +80,8 @@ extension FileHandle {
             while let range = buffer.range(of: nl) {
                 let lineData = buffer.subdata(in: 0..<range.lowerBound)
 
-                if let line = String(data: lineData, encoding: .utf8) {
-                    shouldContinue = closure(line)
+                if let line = String(data: lineData, encoding: encoding) {
+                    shouldContinue = try closure(line)
                 } else {
                     //print("Failed to convert line data to string.")
                 }
@@ -98,7 +97,7 @@ extension FileHandle {
     }
 }
 
-@usableFromInline enum LicenseError: LocalizedError {
+public enum LicenseError: LocalizedError {
     /// The license did not start and end with the necessary strings
     case invalidLicenseFormat
     /// The license has expired
@@ -119,8 +118,12 @@ extension FileHandle {
     case licenseKeyRevoked
     /// The header comment of the source file does not match an approved expression
     case unmatchedHeaders(sourceURLs: [URL], codebaseThreshold: Int)
+    /// The format of the expiration date is invalid
+    case licenseExpirationDateInvalid
+    /// The nonce encoding was not valid
+    case invalidNonceFormat
 
-    @usableFromInline var errorDescription: String? {
+    public var errorDescription: String? {
         switch self {
         case .invalidLicenseFormat:
             return "The skip.tools license is in an invalid format. Please ensure that the license key is the exact string that was provided to you or contact support."
@@ -142,6 +145,10 @@ extension FileHandle {
             return "The skip.tools license needs to be re-generated. Please contact support."
         case .unmatchedHeaders(sourceURLs: let sourceURLs, codebaseThreshold: let codebaseThreshold):
             return "Skip.yml requires skip-license for codebases totaling over \(ByteCountFormatter.string(fromByteCount: .init(codebaseThreshold), countStyle: .memory)) from files: \(sourceURLs.map(\.lastPathComponent).joined(separator: ", "))."
+        case .licenseExpirationDateInvalid:
+            return "The format of the expiration date is invalid."
+        case .invalidNonceFormat:
+            return "The format of the 12-byte hex-encoded nonce is invalid"
         }
     }
 
@@ -207,11 +214,9 @@ struct LicenseKey : Equatable, Codable {
         }
     }
 
-    /// Returns the encrypted license string
-    @inlinable var licenseKeyString: String {
-        get throws {
-            try Self.keyStart + aes(data: licenseJSON.utf8Data, encrypt: true).hexEncodedString().uppercased() + Self.keyEnd
-        }
+    /// Returns the encrypted license string, using the optional 12-byte initialization vector data
+    func licenseKeyString(iv: Data? = nil) throws -> String {
+        try Self.keyStart + aes(nonce: iv.flatMap(AES.GCM.Nonce.init(data:)), data: licenseJSON.utf8Data, encrypt: true).hexEncodedString().uppercased() + Self.keyEnd
     }
 
     static func parseLicenseContent(licenseString: String) throws -> Data {
@@ -293,7 +298,7 @@ extension UUID {
 ///   - data: the data to encrypt or decrypt
 ///   - encrypt: whether the data should be encrypted or decrypted
 /// - Returns: the encrypted or decrypted data
-func aes(keyBase64 keyString: String? = nil, data: Data, encrypt: Bool, currentDate: Date = Date()) throws -> Data {
+func aes(nonce: AES.GCM.Nonce? = nil, keyBase64 keyString: String? = nil, data: Data, encrypt: Bool, currentDate: Date = Date()) throws -> Data {
     func k(_ b1: UInt8, _ b2: UInt8, _ b3: UInt8, _ b4: UInt8, _ b5: UInt8, _ b6: UInt8, _ b7: UInt8, _ b8: UInt8, _ b9: UInt8, _ b10: UInt8, _ b11: UInt8, _ b12: UInt8, _ b13: UInt8, _ b14: UInt8, _ b15: UInt8, _ b16: UInt8) -> Data {
         Data([b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15, b16])
     }
@@ -324,9 +329,6 @@ func aes(keyBase64 keyString: String? = nil, data: Data, encrypt: Bool, currentD
         DateComponents(calendar: Calendar.current, timeZone: TimeZone(secondsFromGMT: 0), year: year, month: month, day: day).date!
     }
 
-    // the shared initialization vector
-    let nonce = AES.GCM.Nonce()
-
     // always encypt using the most recent key; for decryption, try each of the valid
     // keys in turn until one of them works
     for (keyIndex, (keyData, expirationDate)) in keyWheel.enumerated().reversed() {
@@ -347,7 +349,7 @@ func aes(keyBase64 keyString: String? = nil, data: Data, encrypt: Bool, currentD
             let key = SymmetricKey(data: keyData)
 
             if encrypt {
-                let sealedBox = try AES.GCM.seal(data, using: key, nonce: nonce)
+                let sealedBox = try AES.GCM.seal(data, using: key, nonce: nonce ?? AES.GCM.Nonce())
                 return sealedBox.combined ?? sealedBox.ciphertext
             } else {
                 let sealedBox = try AES.GCM.SealedBox(combined: data)

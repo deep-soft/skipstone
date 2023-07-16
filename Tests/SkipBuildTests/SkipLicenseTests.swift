@@ -45,8 +45,13 @@ final class SkipLicenseTests: XCTestCase {
         public struct XYZ { }
         """)
 
-        try await sourceCheck(expectFailure: false, swift: """
+        try await sourceCheck(expectFailure: true, swift: """
         
+        // GNU Affero General Public License
+        public struct XYZ { }
+        """)
+
+        try await sourceCheck(expectFailure: false, swift: """
         // GNU Lesser
         //     General Public License
         public struct XYZ { }
@@ -83,19 +88,26 @@ final class SkipLicenseTests: XCTestCase {
             DateComponents(calendar: Calendar.current, timeZone: TimeZone(secondsFromGMT: 0), year: year, month: month, day: day).date
         }
 
-        func check(_ keyString: String, _ license: LicenseKey) throws {
-            let licenseKeyString = try license.licenseKeyString
+        func check(_ keyString: String, _ license: LicenseKey, iv: Data? = nil) throws {
+            let licenseKeyString = try license.licenseKeyString(iv: iv)
 
-            if keyString.count > 1 {
+            if !keyString.isEmpty {
                 let license2 = try LicenseKey(licenseString: keyString)
                 XCTAssertEqual(license, license2)
-            } else {
+            }
+
+            if iv != nil {
                 XCTAssertEqual(keyString, licenseKeyString)
             }
 
             let license3 = try LicenseKey(licenseString: licenseKeyString)
             XCTAssertEqual(license, license3)
         }
+
+
+        try check("SKP000000000000000000000000EB195AE8771A91FC78BB75BE9DAF55CEF98A795EA2B050A0DDC83B532FEA17C80F684A4C5404ACC9PKS", LicenseKey(id: "*", expiration: date(2000, 1, 1)), iv: Data([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]))
+        try check("SKP010000000000000000000000EA33D2E0AC2A8873E568EC96A02FA367556607F0E66579C59A155D8B69E350E5DDBD3C5DA4D83C6CPKS", LicenseKey(id: "*", expiration: date(2000, 1, 1)), iv: Data([0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]))
+        try check("SKPFFFFFFFFFFFFFFFFFFFFFFFFEB717659AAC56B8C1FABA11B16D8A0532DDB6F663EA90F8028611B26075D9C2C32404FAC9A3E8DE9PKS", LicenseKey(id: "*", expiration: date(2000, 1, 1)), iv: Data([0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]))
 
         try check("SKPA0774FE5E6799A1DDBF57B5A16D66498F578FAB36A4D88B93917DBCEF6FADC3FE3E936E6EDACF1E83F89EEC90D011212597075083APKS", LicenseKey(id: "*", expiration: date(2023, 7, 1)))
         try check("SKP76D90003EF9BE861F47620463C2D34B5CDAB0864810BA475936112C2854944EFC2396689585BD05B9A5CC2365C96F837CD42726A4FPKS", LicenseKey(id: "*", expiration: date(2023, 8, 1)))
