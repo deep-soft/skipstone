@@ -14,6 +14,9 @@
       location = "group:../skipapp">
    </FileRef>
    <FileRef
+      location = "group:../skip-ui">
+   </FileRef>
+   <FileRef
       location = "group:../skipapp/App.xcodeproj">
    </FileRef>
 </Workspace>
