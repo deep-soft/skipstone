@@ -188,6 +188,10 @@ final class SkipLicenseTests: XCTestCase {
         }
     }
 
+    func testHostIdentifier() {
+        XCTAssertNotNil(ProcessInfo.processInfo.hostIdentifier)
+    }
+
     /// Creates a temporary file with the given name and optional contents.
     public func tmpFile(named fileName: String, contents: String? = nil) throws -> URL {
         let tmpDir = URL(fileURLWithPath: UUID().uuidString, isDirectory: true, relativeTo: URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true))
