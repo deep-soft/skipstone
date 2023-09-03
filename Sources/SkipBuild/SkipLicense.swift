@@ -13,12 +13,14 @@ internal let validLicenseHeaders = [
 
 struct SourceValidator {
     /// Scans the sources at the given URLs above a total given codebase size for approved header comments that match the list of header expressions.
-    @discardableResult static func scanSources(from sourceURLs: [URL], codebaseThreshold: Int, headerExpressions: [NSRegularExpression] = validLicenseHeaders) throws -> (size: Int, validate: Bool) {
-        // get the total codebase size (in bytes)
-        let codebaseSize = try sourceURLs.compactMap { try $0.resourceValues(forKeys: [.fileSizeKey]).fileSize }.reduce(0, +)
-        if codebaseSize < codebaseThreshold {
-            // for small codebases below the threshold don't bother checking anything
-            return (codebaseSize, false)
+    @discardableResult static func scanSources(from sourceURLs: [URL], codebaseThreshold: Int?, headerExpressions: [NSRegularExpression] = validLicenseHeaders) throws -> Bool {
+        // if we are using total codebase size to check for licenses, then get the total codebase size (in bytes)
+        if let codebaseThreshold = codebaseThreshold {
+            let codebaseSize = try sourceURLs.compactMap { try $0.resourceValues(forKeys: [.fileSizeKey]).fileSize }.reduce(0, +)
+            if codebaseSize < codebaseThreshold {
+                // for small codebases below the threshold don't bother checking anything
+                return false
+            }
         }
 
         // we are above the threshold; if we have a license, vallidate it; otherwise scan the code and ensure that it contains an approved head expression
@@ -51,10 +53,10 @@ struct SourceValidator {
 
         if !unmatchedHeaderURLs.isEmpty {
             // report on all the files that were missing the requisite headers
-            throw LicenseError.unmatchedHeaders(sourceURLs: unmatchedHeaderURLs, codebaseThreshold: codebaseThreshold)
+            throw LicenseError.unmatchedHeaders(sourceURLs: unmatchedHeaderURLs)
         }
 
-        return (codebaseSize, true)
+        return true
     }
 }
 
@@ -117,11 +119,13 @@ public enum LicenseError: LocalizedError {
     /// The specific license key has been added to the revocation list
     case licenseKeyRevoked
     /// The header comment of the source file does not match an approved expression
-    case unmatchedHeaders(sourceURLs: [URL], codebaseThreshold: Int)
+    case unmatchedHeaders(sourceURLs: [URL])
     /// The format of the expiration date is invalid
     case licenseExpirationDateInvalid
     /// The nonce encoding was not valid
     case invalidNonceFormat
+    /// The Skip installation information was not found
+    case skipNotInstalled
 
     public var errorDescription: String? {
         switch self {
@@ -143,12 +147,14 @@ public enum LicenseError: LocalizedError {
             return "The skip.tools license needs to be re-constructed. Please contact support."
         case .licenseKeyRevoked:
             return "The skip.tools license needs to be re-generated. Please contact support."
-        case .unmatchedHeaders(sourceURLs: let sourceURLs, codebaseThreshold: let codebaseThreshold):
-            return "Skip.yml requires skip-license for codebases totaling over \(ByteCountFormatter.string(fromByteCount: .init(codebaseThreshold), countStyle: .memory)) from files: \(sourceURLs.map(\.lastPathComponent).joined(separator: ", "))."
+        case .unmatchedHeaders(sourceURLs: let sourceURLs):
+            return "No skip.tools license key found in ~/.skiptools/skipkey.env for transpilation of: \(sourceURLs.map(\.lastPathComponent).joined(separator: ", "))."
         case .licenseExpirationDateInvalid:
             return "The format of the expiration date is invalid."
         case .invalidNonceFormat:
             return "The format of the 12-byte hex-encoded nonce is invalid"
+        case .skipNotInstalled:
+            return "Skip not installed – see https://skip.tools and install with: brew install skiptools/skip/skip"
         }
     }
 
@@ -164,7 +170,7 @@ public enum LicenseError: LocalizedError {
     /// The source file that should be associated with this error, if any
     var sourceFile: Source.FilePath? {
         switch self {
-        case .unmatchedHeaders(let urls, _):
+        case .unmatchedHeaders(let urls):
             guard let url = urls.first else {
                 return nil
             }
@@ -180,6 +186,7 @@ public enum LicenseError: LocalizedError {
 struct LicenseKey : Equatable, Codable {
     let id: String
     let expiration: Date
+    let hostid: String?
 
     // bookends make the key identifiable with a regular expression ("^SKP[0-9A-F]{10,}PKS$"), so we can be notified of leaked keys by key scanning services like:
     // https://docs.github.com/en/code-security/secret-scanning/secret-scanning-partner-program#the-secret-scanning-process
@@ -189,11 +196,13 @@ struct LicenseKey : Equatable, Codable {
     enum CodingKeys: String, CodingKey {
         case id = "id"
         case expiration = "x"
+        case hostid = "h"
     }
 
-    @inlinable init(id: String, expiration: Date) {
+    @inlinable init(id: String, expiration: Date, hostid: String? = nil) {
         self.id = id
         self.expiration = expiration
+        self.hostid = hostid
     }
 
     @inlinable init(licenseString: String) throws {
@@ -366,3 +375,13 @@ func aes(nonce: AES.GCM.Nonce? = nil, keyBase64 keyString: String? = nil, data: 
     // we've exhaused the keywheel
     throw LicenseError.noKeys
 }
+
+/// Returns the ~/.skiptools/ folder, throwing an error if it does not exist (it should have been created by `skip welcome` in the postinstall for `brew install skiptools/skip/skip`
+func skiptoolsFolder() throws -> (URL, Date) {
+    let folder = URL(fileURLWithPath: ".skiptools", relativeTo: URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true))
+    guard let installDate = try? folder.resourceValues(forKeys: [.creationDateKey]).creationDate else {
+        throw LicenseError.skipNotInstalled
+    }
+    return (folder, installDate)
+}
+
