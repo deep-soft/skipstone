@@ -130,23 +130,23 @@ public enum LicenseError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .invalidLicenseFormat:
-            return "The skip.tools license is in an invalid format. Please ensure that the license key is the exact string that was provided to you or contact support."
+            return "The skip.tools license in ~/.skiptools/skipkey.env is invalid."
         case .licenseExpired(expiration: let expiration):
-            return "The skip.tools license expired on \(expiration) and must be renewed."
+            return "The skip.tools license in ~/.skiptools/skipkey.env expired on \(expiration) and must be renewed."
         case .noKeys:
-            return "The skip.tools license has an internal error. Please contact support."
+            return "The skip.tools license in ~/.skiptools/skipkey.env has an internal error."
         case .invalidKey:
-            return "The skip.tools license content was invalid. Please contact support."
+            return "The skip.tools license content in ~/.skiptools/skipkey.env was invalid."
         case .invalidData:
-            return "The skip.tools license data was invalid. Please contact support."
+            return "The skip.tools license data was invalid."
         case .cryptorFailure(status: let status):
-            return "Internal skip.tools license error: \(status). Please contact support."
+            return "Internal skip.tools license error: \(status)."
         case .cryptKeyExpired(date: let date):
-            return "The skip.tools license was created with a version of the software that expired on \(date) and must be re-generated. Please contact support."
+            return "The skip.tools license was created with a version of the software that expired on \(date) and must be re-generated."
         case .cryptKeyRevoked:
-            return "The skip.tools license needs to be re-constructed. Please contact support."
+            return "The skip.tools license needs to be re-constructed."
         case .licenseKeyRevoked:
-            return "The skip.tools license needs to be re-generated. Please contact support."
+            return "The skip.tools license needs to be re-generated."
         case .unmatchedHeaders(sourceURLs: let sourceURLs):
             return "No skip.tools license key found in ~/.skiptools/skipkey.env for transpilation of: \(sourceURLs.map(\.lastPathComponent).joined(separator: ", "))."
         case .licenseExpirationDateInvalid:
@@ -154,7 +154,7 @@ public enum LicenseError: LocalizedError {
         case .invalidNonceFormat:
             return "The format of the 12-byte hex-encoded nonce is invalid"
         case .skipNotInstalled:
-            return "Skip not installed – see https://skip.tools and install with: brew install skiptools/skip/skip"
+            return "This project's Skip transpiler needs to be installed and configured – see https://skip.tools and install with: brew install skiptools/skip/skip"
         }
     }
 
