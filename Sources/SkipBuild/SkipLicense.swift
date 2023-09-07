@@ -1,5 +1,7 @@
 import Foundation
 import SkipSyntax
+import struct Universal.YAML
+
 #if canImport(Crypto)
 @_implementationOnly import Crypto
 #else
@@ -177,6 +179,73 @@ public enum LicenseError: LocalizedError {
             return .init(path: url.path)
         default:
             return nil
+        }
+    }
+}
+
+protocol LicenseValidator : StreamingCommand where Self : SkipPhase {
+    var licenseOptions: LicenseOptions { get }
+}
+
+extension LicenseValidator {
+    /// Validate the license key if it is present in the tool or environment; otherwise scan the sources for approved license headers
+    func validateLicense(sourceURLs: [URL], against now: Date = Date.now) async throws {
+
+        /// Loads the `skipkey.env` file in ~/.skiptools/ for a license key
+        func parseLicenseConfig() throws -> (Date, String?) {
+            let (folder, installDate) = try skiptoolsFolder()
+            let skipkeyFile = URL(fileURLWithPath: "skipkey.env", isDirectory: false, relativeTo: folder)
+            if FileManager.default.fileExists(atPath: skipkeyFile.path) {
+                let yaml = try YAML.parse(Data(contentsOf: skipkeyFile))
+                if let license = yaml["SKIPKEY"]?.string, !license.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    return (installDate, license)
+                }
+            }
+
+            return (installDate, nil)
+        }
+
+        do {
+            var (installDate, licenseString) = try parseLicenseConfig()
+            let trialExpiration = installDate.addingTimeInterval(60 * 60 * 24 * 15) // 15-day implicit trial
+
+            licenseString = licenseString ?? licenseOptions.skipKey ?? ProcessInfo.processInfo.environment["SKIPKEY"]
+
+            let license = try licenseString.flatMap { try LicenseKey(licenseString: $0) }
+
+            if let license = license {
+                let exp = DateFormatter.localizedString(from: license.expiration, dateStyle: .short, timeStyle: .none)
+                let daysLeft = Int(ceil(license.expiration.timeIntervalSince(now) / (12 * 60 * 60)))
+
+                // if the license key has a hostid encoded into it, then validate it against the current machine
+                if let hostid = license.hostid, hostid != ProcessInfo.processInfo.hostIdentifier {
+                    throw error("Skip license key validation failed – manage your skipkeys at https://skip.tools")
+                }
+
+                // allow padding the license expiration for up to 14 days
+                if daysLeft + min(licenseOptions.skipGracePeriod ?? 0, 14) < 0 {
+                    throw error("Skip license key expired on \(exp) – get a new skipkey from https://skip.tools")
+                } else if daysLeft <= 10 { // warn when the license is about to expire
+                    warn("Skip license key will expire in \(daysLeft) day\(daysLeft == 1 ? "" : "s") on \(exp) – get a new skipkey from https://skip.tools")
+                } else {
+                    info("Skip license key valid through \(exp)")
+                }
+            } else if now < trialExpiration {
+                let exp = DateFormatter.localizedString(from: trialExpiration, dateStyle: .short, timeStyle: .none)
+                let daysLeft = Int(ceil(trialExpiration.timeIntervalSince(now) / (12 * 60 * 60)))
+                if daysLeft <= 10 {
+                    warn("Skip trial will expire in \(daysLeft) day\(daysLeft == 1 ? "" : "s") on \(exp) – get a skipkey from https://skip.tools")
+                }
+            } else { // no license key – scan sources for valid open-source license headers
+                let scanSourceStart = Date().timeIntervalSinceReferenceDate
+                let validated = try SourceValidator.scanSources(from: sourceURLs, codebaseThreshold: Self.codebaseThresholdSize)
+                let scanSourceEnd = Date().timeIntervalSinceReferenceDate
+                info("Codebase \(validated ? " scanned" : " scanned") (\(Int64((scanSourceEnd - scanSourceStart) * 1000)) ms)")
+            }
+        } catch let e as LicenseError {
+            // issue an error with the offending file
+            error(e.localizedDescription, sourceFile: e.sourceFile)
+            throw e
         }
     }
 }
