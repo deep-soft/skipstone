@@ -190,6 +190,10 @@ protocol LicenseValidator : StreamingCommand where Self : SkipPhase {
 extension LicenseValidator {
     /// Validate the license key if it is present in the tool or environment; otherwise scan the sources for approved license headers
     func validateLicense(sourceURLs: [URL], against now: Date = Date.now) async throws {
+        if (try? SourceValidator.scanSources(from: sourceURLs, codebaseThreshold: Self.codebaseThresholdSize)) == true {
+            // source headler licenses pass tests
+            return
+        }
 
         /// Loads the `skipkey.env` file in ~/.skiptools/ for a license key
         func parseLicenseConfig() throws -> (Date, String?) {
