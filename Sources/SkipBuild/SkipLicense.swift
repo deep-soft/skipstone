@@ -183,7 +183,7 @@ public enum LicenseError: LocalizedError {
     }
 }
 
-protocol LicenseValidator : StreamingCommand where Self : SkipPhase {
+protocol LicenseValidator : StreamingCommand where Self : SkipCommand {
     var licenseOptions: LicenseOptions { get }
 }
 
