@@ -364,6 +364,23 @@ extension Sequence where Element == UInt8 {
     }
 }
 
+extension URL {
+    /// Calculates the hash from a file URL and returns the SHA256 hash.
+    func SHA256Hash(bufferSize: Int = 8192) throws -> String {
+        let fileHandle = try FileHandle(forReadingFrom: self)
+        defer { try? fileHandle.close() }
+
+        var hasher = SHA256()
+
+        while let data = try fileHandle.read(upToCount: bufferSize) {
+            hasher.update(data: data)
+        }
+
+        let digest = hasher.finalize()
+        return digest.compactMap { String(format: "%02x", $0) }.joined()
+    }
+}
+
 extension UUID {
     /// Take the bytes of the UUID and convert the data to base64
     @inlinable var base64String: String {
