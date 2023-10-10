@@ -14,30 +14,23 @@ internal let validLicenseHeaders = [
 ]
 
 struct SourceValidator {
-    /// Scans the sources at the given URLs above a total given codebase size for approved header comments that match the list of header expressions.
-    @discardableResult static func scanSources(from sourceURLs: [URL], codebaseThreshold: Int?, headerExpressions: [NSRegularExpression] = validLicenseHeaders) throws -> Bool {
-        // if we are using total codebase size to check for licenses, then get the total codebase size (in bytes)
-        if let codebaseThreshold = codebaseThreshold {
-            let codebaseSize = try sourceURLs.compactMap { try $0.resourceValues(forKeys: [.fileSizeKey]).fileSize }.reduce(0, +)
-            if codebaseSize < codebaseThreshold {
-                // for small codebases below the threshold don't bother checking anything
-                return false
-            }
-        }
+    /// Scans the sources and returns the hashes, as well as checking for approved free license headers.
+    @discardableResult static func scanSources(from sourceURLs: [URL], headerExpressions: [NSRegularExpression] = validLicenseHeaders) throws -> (unlicensedSources: [URL], sourceHashes: [URL: String]) {
 
-        // we are above the threshold; if we have a license, vallidate it; otherwise scan the code and ensure that it contains an approved head expression
+        var sourceHashes: [URL: String] = [:]
+
+        // we are above the threshold; if we have a license, validate it; otherwise scan the code and ensure that it contains an approved header regex
         var unmatchedHeaderURLs: [URL] = []
         for sourceURL in sourceURLs {
             var headers: [String] = []
-            let handle = try FileHandle(forReadingFrom: sourceURL)
-            defer { try? handle.close() }
+            let contents = try String(contentsOf: sourceURL)
+            sourceHashes[sourceURL] = contents.data(using: .utf8)?.SHA256Hash()
 
-            try handle.iterateLines { line in
-                if line.hasPrefix("//") {
+            contents.enumerateLines { line, stop in
+                if line.hasPrefix("//") && headers.count <= 15 { // scan the first 15 single-line header comments
                     headers.append(line.drop(while: { $0 == "/" }).trimmingCharacters(in: .whitespacesAndNewlines))
-                    return headers.count < 15 // only scan the first 15 lines
                 } else {
-                    return false // only scan up to the final opening comment
+                    stop = true // only scan up to the final opening comment single-line comment
                 }
             }
 
@@ -47,18 +40,13 @@ struct SourceValidator {
                 $0.numberOfMatches(in: headerString, range: NSRange(headerString.startIndex..<headerString.endIndex, in: headerString)) > 0
             }
 
-            // if none of the header expressions matched, then this is an unmatched source
+            // if none of the header expressions matched, then this is an unlicensed source
             if !matches {
                 unmatchedHeaderURLs += [sourceURL]
             }
         }
 
-        if !unmatchedHeaderURLs.isEmpty {
-            // report on all the files that were missing the requisite headers
-            throw LicenseError.unmatchedHeaders(sourceURLs: unmatchedHeaderURLs)
-        }
-
-        return true
+        return (unlicensedSources: unmatchedHeaderURLs, sourceHashes: sourceHashes)
     }
 }
 
@@ -189,10 +177,12 @@ protocol LicenseValidator : StreamingCommand where Self : SkipCommand {
 
 extension LicenseValidator {
     /// Validate the license key if it is present in the tool or environment; otherwise scan the sources for approved license headers
-    func validateLicense(sourceURLs: [URL], against now: Date = Date.now) async throws {
-        if (try? SourceValidator.scanSources(from: sourceURLs, codebaseThreshold: Self.codebaseThresholdSize)) == true {
-            // source headler licenses pass tests
-            return
+    func createSourceHashes(validateLicense: Bool, sourceURLs: [URL], against now: Date = Date.now) async throws -> [URL: String] {
+        let (unlicensedSources, sourceHashes) = try SourceValidator.scanSources(from: sourceURLs)
+
+        // when the source code all passes the free license check (e.g., GPL license headers), just return the source hashes
+        if unlicensedSources.isEmpty {
+            return sourceHashes
         }
 
         /// Loads the `skipkey.env` file in ~/.skiptools/ for a license key
@@ -209,48 +199,44 @@ extension LicenseValidator {
             return (installDate, nil)
         }
 
-        do {
-            var (installDate, licenseString) = try parseLicenseConfig()
-            let trialExpiration = installDate.addingTimeInterval(60 * 60 * 24 * 15) // 15-day implicit trial
+        var (installDate, licenseString) = try parseLicenseConfig()
+        let trialExpiration = installDate.addingTimeInterval(60 * 60 * 24 * 15) // 15-day implicit trial
 
-            licenseString = licenseString ?? licenseOptions.skipKey ?? ProcessInfo.processInfo.environment["SKIPKEY"]
+        licenseString = licenseString ?? licenseOptions.skipKey ?? ProcessInfo.processInfo.environment["SKIPKEY"]
 
-            let license = try licenseString.flatMap { try LicenseKey(licenseString: $0) }
+        let license = try licenseString.flatMap { try LicenseKey(licenseString: $0) }
 
-            if let license = license {
-                let exp = DateFormatter.localizedString(from: license.expiration, dateStyle: .short, timeStyle: .none)
-                let daysLeft = Int(ceil(license.expiration.timeIntervalSince(now) / (12 * 60 * 60)))
+        if let license = license {
+            let exp = DateFormatter.localizedString(from: license.expiration, dateStyle: .short, timeStyle: .none)
+            let daysLeft = Int(ceil(license.expiration.timeIntervalSince(now) / (12 * 60 * 60)))
 
-                // if the license key has a hostid encoded into it, then validate it against the current machine
-                if let hostid = license.hostid, hostid != ProcessInfo.processInfo.hostIdentifier {
-                    throw error("Skip license key validation failed – manage your skipkeys at https://skip.tools")
-                }
-
-                // allow padding the license expiration for up to 14 days
-                if daysLeft + min(licenseOptions.skipGracePeriod ?? 0, 14) < 0 {
-                    throw error("Skip license key expired on \(exp) – get a new skipkey from https://skip.tools")
-                } else if daysLeft <= 10 { // warn when the license is about to expire
-                    warn("Skip license key will expire in \(daysLeft) day\(daysLeft == 1 ? "" : "s") on \(exp) – get a new skipkey from https://skip.tools")
-                } else {
-                    info("Skip license key valid through \(exp)")
-                }
-            } else if now < trialExpiration {
-                let exp = DateFormatter.localizedString(from: trialExpiration, dateStyle: .short, timeStyle: .none)
-                let daysLeft = Int(ceil(trialExpiration.timeIntervalSince(now) / (12 * 60 * 60)))
-                if daysLeft <= 10 {
-                    warn("Skip trial will expire in \(daysLeft) day\(daysLeft == 1 ? "" : "s") on \(exp) – get a skipkey from https://skip.tools")
-                }
-            } else { // no license key – scan sources for valid open-source license headers
-                let scanSourceStart = Date().timeIntervalSinceReferenceDate
-                let validated = try SourceValidator.scanSources(from: sourceURLs, codebaseThreshold: Self.codebaseThresholdSize)
-                let scanSourceEnd = Date().timeIntervalSinceReferenceDate
-                info("Codebase \(validated ? " scanned" : " scanned") (\(Int64((scanSourceEnd - scanSourceStart) * 1000)) ms)")
+            // if the license key has a hostid encoded into it, then validate it against the current machine
+            if let hostid = license.hostid, hostid != ProcessInfo.processInfo.hostIdentifier {
+                throw error("Skip license key validation failed – manage your skipkeys at https://skip.tools")
             }
-        } catch let e as LicenseError {
-            // issue an error with the offending file
-            error(e.localizedDescription, sourceFile: e.sourceFile)
-            throw e
+
+            // allow padding the license expiration for up to 14 days
+            if daysLeft + min(licenseOptions.skipGracePeriod ?? 0, 14) < 0 {
+                throw error("Skip license key expired on \(exp) – get a new skipkey from https://skip.tools")
+            } else if daysLeft <= 10 { // warn when the license is about to expire
+                warn("Skip license key will expire in \(daysLeft) day\(daysLeft == 1 ? "" : "s") on \(exp) – get a new skipkey from https://skip.tools")
+            } else {
+                info("Skip license key valid through \(exp)")
+            }
+        } else if now < trialExpiration {
+            let exp = DateFormatter.localizedString(from: trialExpiration, dateStyle: .short, timeStyle: .none)
+            let daysLeft = Int(ceil(trialExpiration.timeIntervalSince(now) / (12 * 60 * 60)))
+            if daysLeft <= 10 {
+                warn("Skip trial will expire in \(daysLeft) day\(daysLeft == 1 ? "" : "s") on \(exp) – get a skipkey from https://skip.tools")
+            }
+        } else if !unlicensedSources.isEmpty {
+            // report on all the files that were missing the requisite headers
+            let licenseError = LicenseError.unmatchedHeaders(sourceURLs: unlicensedSources)
+            error(licenseError.localizedDescription, sourceFile: licenseError.sourceFile)
+            throw licenseError
         }
+
+        return sourceHashes
     }
 }
 
@@ -361,6 +347,13 @@ extension Sequence where Element == UInt8 {
     /// Encodes a `Data` or `Array<UInt8>` as a hex string
     @inlinable func hexEncodedString() -> String {
         map { String(format: "%02hhx", $0) }.joined()
+    }
+}
+
+/// A sequence that both `Data` and `String.UTF8View` conform to.
+extension Data {
+    func SHA256Hash() -> String {
+        SHA256.hash(data: self).compactMap { String(format: "%02x", $0) }.joined()
     }
 }
 
