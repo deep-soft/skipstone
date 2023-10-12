@@ -171,11 +171,7 @@ public enum LicenseError: LocalizedError {
     }
 }
 
-protocol LicenseValidator : StreamingCommand where Self : SkipCommand {
-    var licenseOptions: LicenseOptions { get }
-}
-
-extension LicenseValidator {
+extension StreamingCommand {
     /// Validate the license key if it is present in the tool or environment; otherwise scan the sources for approved license headers
     func createSourceHashes(validateLicense: Bool, sourceURLs: [URL], against now: Date = Date.now) async throws -> [URL: String] {
         let (unlicensedSources, sourceHashes) = try SourceValidator.scanSources(from: sourceURLs)
@@ -202,7 +198,7 @@ extension LicenseValidator {
         var (installDate, licenseString) = try parseLicenseConfig()
         let trialExpiration = installDate.addingTimeInterval(60 * 60 * 24 * 15) // 15-day implicit trial
 
-        licenseString = licenseString ?? licenseOptions.skipKey ?? ProcessInfo.processInfo.environment["SKIPKEY"]
+        licenseString = licenseString ?? ProcessInfo.processInfo.environment["SKIPKEY"]
 
         let license = try licenseString.flatMap { try LicenseKey(licenseString: $0) }
 
@@ -216,7 +212,7 @@ extension LicenseValidator {
             }
 
             // allow padding the license expiration for up to 14 days
-            if daysLeft + min(licenseOptions.skipGracePeriod ?? 0, 14) < 0 {
+            if daysLeft < 0 {
                 throw error("Skip license key expired on \(exp) – get a new skipkey from https://skip.tools")
             } else if daysLeft <= 10 { // warn when the license is about to expire
                 warn("Skip license key will expire in \(daysLeft) day\(daysLeft == 1 ? "" : "s") on \(exp) – get a new skipkey from https://skip.tools")
