@@ -68,7 +68,7 @@ final class SkipLicenseTests: XCTestCase {
         let srcFile = try tmpFile(named: "Source.swift", contents: swift)
 
         // first make sure that everything below the codebase threshold passes regardless of the header comment
-        try SourceValidator.scanSources(from: [srcFile], headerExpressions: [])
+        try SourceValidator.scanSources(from: [srcFile], in: ["swift"], headerExpressions: [])
     }
 
     func testLicenseKeys() throws {

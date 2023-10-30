@@ -15,7 +15,7 @@ internal let validLicenseHeaders = [
 
 struct SourceValidator {
     /// Scans the sources and returns the hashes, as well as checking for approved free license headers.
-    @discardableResult static func scanSources(from sourceURLs: [URL], headerExpressions: [NSRegularExpression] = validLicenseHeaders) throws -> (unlicensedSources: [URL], sourceHashes: [URL: String]) {
+    @discardableResult static func scanSources(from sourceURLs: [URL], in pathExtensions: Set<String>, headerExpressions: [NSRegularExpression] = validLicenseHeaders) throws -> (unlicensedSources: [URL], sourceHashes: [URL: String]) {
 
         var sourceHashes: [URL: String] = [:]
 
@@ -23,10 +23,15 @@ struct SourceValidator {
         var unmatchedHeaderURLs: [URL] = []
         for sourceURL in sourceURLs {
             var headers: [String] = []
-            let contents = try String(contentsOf: sourceURL)
-            sourceHashes[sourceURL] = contents.data(using: .utf8)?.SHA256Hash()
+            let contents = try Data(contentsOf: sourceURL)
+            sourceHashes[sourceURL] = contents.SHA256Hash()
 
-            contents.enumerateLines { line, stop in
+            // only scan files with the given path extension for a valid license
+            if !pathExtensions.contains(sourceURL.pathExtension) {
+                continue
+            }
+
+            String(data: contents, encoding: .utf8)?.enumerateLines { line, stop in
                 if line.hasPrefix("//") && headers.count <= 15 { // scan the first 15 single-line header comments
                     headers.append(line.drop(while: { $0 == "/" }).trimmingCharacters(in: .whitespacesAndNewlines))
                 } else {
@@ -173,8 +178,8 @@ public enum LicenseError: LocalizedError {
 
 extension StreamingCommand {
     /// Validate the license key if it is present in the tool or environment; otherwise scan the sources for approved license headers
-    func createSourceHashes(validateLicense: Bool, sourceURLs: [URL], against now: Date = Date.now) async throws -> [URL: String] {
-        let (unlicensedSources, sourceHashes) = try SourceValidator.scanSources(from: sourceURLs)
+    func createSourceHashes(validateLicense pathExtensions: Set<String>, sourceURLs: [URL], against now: Date = Date.now) async throws -> [URL: String] {
+        let (unlicensedSources, sourceHashes) = try SourceValidator.scanSources(from: sourceURLs.filter({ pathExtensions.contains($0.pathExtension) }), in: pathExtensions)
 
         // when the source code all passes the free license check (e.g., GPL license headers), just return the source hashes
         if unlicensedSources.isEmpty {
