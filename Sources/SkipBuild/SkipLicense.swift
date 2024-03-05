@@ -3,9 +3,9 @@ import SkipSyntax
 import struct Universal.YAML
 
 #if canImport(Crypto)
-@_implementationOnly import Crypto
+import Crypto
 #else
-@_implementationOnly import CryptoKit
+import CryptoKit
 #endif
 
 /// the list of header match expressions that we permit for codebases above the given threshold
