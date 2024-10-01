@@ -446,9 +446,10 @@ func aes(nonce: AES.GCM.Nonce? = nil, keyBase64 keyString: String? = nil, data: 
                 throw LicenseError.cryptKeyRevoked
             }
 
-            if currentDate > expirationDate {
-                throw LicenseError.cryptKeyExpired(date: expirationDate)
-            }
+            // emergency fix for key expiration errors
+//            if currentDate > expirationDate {
+//                throw LicenseError.cryptKeyExpired(date: expirationDate)
+//            }
 
             let key = SymmetricKey(data: keyData)
 
