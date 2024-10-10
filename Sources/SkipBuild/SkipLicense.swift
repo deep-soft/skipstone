@@ -446,6 +446,7 @@ func aes(nonce: AES.GCM.Nonce? = nil, keyBase64 keyString: String? = nil, data: 
                 throw LicenseError.cryptKeyRevoked
             }
 
+            let _ = expirationDate
             // emergency fix for key expiration errors
 //            if currentDate > expirationDate {
 //                throw LicenseError.cryptKeyExpired(date: expirationDate)
