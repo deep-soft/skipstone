@@ -742,7 +742,7 @@ final class KotlinBridgeToSwiftTransformer: KotlinTransformer {
                 swift.append(1, self.swift(forHashFunctionIn: bridgeImpl, modifiers: Modifiers()))
             } else if protocolSignature.isComparable {
                 swift.append(1, self.swift(forLessThanDeclarationIn: bridgeImpl, modifiers: Modifiers(isStatic: true)))
-            } else if let protocolInfo = codebaseInfo.primaryTypeInfo(forNamed: protocolSignature) {
+            } else if let protocolInfo = codebaseInfo.primaryTypeInfo(forNamed: protocolSignature), protocolInfo.attributes.isBridgeToSwift || protocolInfo.attributes.isBridgeToKotlin {
                 swift.append(1, self.swift(forUnknownBridgeImplMembers: protocolInfo, codebaseInfo: codebaseInfo))
             }
         }

@@ -580,6 +580,13 @@ final class KotlinBridgeToKotlinTransformer: KotlinTransformer {
         }
         interfaceDeclaration.extras = nil
         interfaceDeclaration.inherits = interfaceDeclaration.inherits.filter { $0.isNamed("Comparable") || $0.checkBridgable(codebaseInfo: codebaseInfo) != nil }
+        for member in interfaceDeclaration.members {
+            if let variableDeclaration = member as? KotlinVariableDeclaration, !variableDeclaration.attributes.isBridgeIgnored {
+                _ = variableDeclaration.checkBridgable(translator: translator)
+            } else if let functionDeclaration = member as? KotlinFunctionDeclaration, !functionDeclaration.attributes.isBridgeIgnored {
+                _ = functionDeclaration.checkBridgable(translator: translator)
+            }
+        }
         return true
     }
 
