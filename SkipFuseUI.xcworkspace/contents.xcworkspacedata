@@ -41,6 +41,9 @@
       location = "group:../skip-fuse">
    </FileRef>
    <FileRef
+      location = "group:../skip-fuse-ui">
+   </FileRef>
+   <FileRef
       location = "group:../skip-kit">
    </FileRef>
    <FileRef
@@ -51,6 +54,9 @@
    </FileRef>
    <FileRef
       location = "group:../skipapp-hello/Darwin/HelloSkip.xcodeproj">
+   </FileRef>
+   <FileRef
+      location = "group:../skipapp-hello-fuse/Darwin/HelloSkipFuse.xcodeproj">
    </FileRef>
    <FileRef
       location = "group:../skipapp-hiya/Darwin/HiyaSkip.xcodeproj">
