@@ -10,7 +10,8 @@ import CryptoKit
 
 /// the list of header match expressions that we permit for codebases above the given threshold
 internal let validLicenseHeaders = [
-    try! NSRegularExpression(pattern: #".*GNU(?:\sAffero|\sLesser)*\sGeneral\sPublic\sLicense.*"#)
+    try! NSRegularExpression(pattern: #".*GNU(?:\sAffero|\sLesser)*\sGeneral\sPublic\sLicense.*"#), // full license text
+    try! NSRegularExpression(pattern: #".*SPDX-License-Identifier: (?:A|L)GPL-*"#), // SPDX ID
 ]
 
 struct SourceValidator {
