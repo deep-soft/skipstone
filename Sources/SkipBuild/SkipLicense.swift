@@ -144,13 +144,13 @@ public enum LicenseError: LocalizedError {
         case .licenseKeyRevoked:
             return "The skip.tools license needs to be re-generated."
         case .unmatchedHeaders(sourceURLs: let sourceURLs):
-            return "No skip.tools license key found in ~/.skiptools/skipkey.env for transpilation of: \(sourceURLs.map(\.lastPathComponent).joined(separator: ", "))."
+            return "No skip.tools license key found in ~/.skiptools/skipkey.env for source files: \(sourceURLs.map(\.lastPathComponent).joined(separator: ", "))."
         case .licenseExpirationDateInvalid:
             return "The format of the expiration date is invalid."
         case .invalidNonceFormat:
             return "The format of the 12-byte hex-encoded nonce is invalid"
         case .skipNotInstalled:
-            return "This project's Skip transpiler needs to be installed and configured – see https://skip.tools and install with: brew install skiptools/skip/skip"
+            return "Skip is not installed — see https://skip.tools and install with: brew install skiptools/skip/skip"
         }
     }
 
@@ -179,66 +179,119 @@ public enum LicenseError: LocalizedError {
 
 extension StreamingCommand {
     /// Validate the license key if it is present in the tool or environment; otherwise scan the sources for approved license headers
-    func createSourceHashes(validateLicense pathExtensions: Set<String>, sourceURLs: [URL], against now: Date = Date.now) async throws -> [URL: String] {
+    func createSourceHashes(validateLicense pathExtensions: Set<String>, isNativeModule: Bool, sourceURLs: [URL]) async throws -> [URL: String] {
         let (unlicensedSources, sourceHashes) = try SourceValidator.scanSources(from: sourceURLs.filter({ pathExtensions.contains($0.pathExtension) }), in: pathExtensions)
 
-        // when the source code all passes the free license check (e.g., GPL license headers), just return the source hashes
+        // when the source code all passes the free license check (i.e., approved open-source license headers), just return the source hashes
         if unlicensedSources.isEmpty {
             return sourceHashes
         }
 
-        /// Loads the `skipkey.env` file in ~/.skiptools/ for a license key
-        func parseLicenseConfig() throws -> (Date, String?) {
-            let (folder, installDate) = try skiptoolsFolder()
-            let skipkeyFile = URL(fileURLWithPath: "skipkey.env", isDirectory: false, relativeTo: folder)
-            if FileManager.default.fileExists(atPath: skipkeyFile.path) {
-                let yaml = try YAML.parse(Data(contentsOf: skipkeyFile))
+        try verifySkipInstallation(sourceFiles: unlicensedSources, isNativeModule: isNativeModule)
+
+        return sourceHashes
+    }
+
+    func verifySkipInstallation(sourceFiles: [URL], isNativeModule: Bool, against now: Date = Date.now) throws {
+        // check whether the locally-installed Homebrew version of Skip matches the current version; recommend upgrading if not
+        let skipInstallMarkerFile = ProcessInfo.homebrewRoot + "/Caskroom/skip"
+        let skipUpdatedMarkerFile = skipInstallMarkerFile + "/" + skipVersion + "/skip.artifactbundle/info.json"
+        if !FileManager.default.fileExists(atPath: skipInstallMarkerFile) {
+            warn("Skip installaton not found. See https://skip.tools and install with: brew install skiptools/skip/skip")
+        } else if !FileManager.default.fileExists(atPath: skipUpdatedMarkerFile) {
+            warn("Skip installation is out of date with skipstone plugin version \(skipVersion). Please upgrade by running: skip upgrade")
+        }
+
+        // Get the ~/.skiptools/ folder, throwing an error if it does not exist (it should have been created by `skip welcome` in the postinstall for `brew install skiptools/skip/skip`
+        let skiptoolsFolder = URL(fileURLWithPath: ".skiptools", relativeTo: URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true))
+        guard let installDate = try? skiptoolsFolder.resourceValues(forKeys: [.creationDateKey]).creationDate else {
+            throw LicenseError.skipNotInstalled
+        }
+
+        let trialExpiration = installDate.addingTimeInterval(60 * 60 * 24 * 15) // 15-day implicit trial
+        let skipkeyFile = URL(fileURLWithPath: "skipkey.env", isDirectory: false, relativeTo: skiptoolsFolder)
+        let skipkeyFileSourcePath = Source.FilePath(path: skipkeyFile.path)
+
+        // fall back on a system environment "SKIPKEY" for potential CI usage
+        var licenseString = ProcessInfo.processInfo.environment["SKIPKEY"]
+        var skipkeyFileSourceRange: Source.Range? = nil
+
+        // Load the `skipkey.env` file in ~/.skiptools/ for a license key
+        if FileManager.default.fileExists(atPath: skipkeyFile.path) {
+            do {
+                let skipkeyData = try Data(contentsOf: skipkeyFile)
+                let skipkeyLicenseLines = (String(data: skipkeyData, encoding: .utf8) ?? "").split(separator: "\n", omittingEmptySubsequences: false)
+
+                // track the line where the "SKIPKEY" setting is located so any errors/warnings can highlight the correct line
+                // if it is missing, select the end of the file by using the index of the count if lines
+                let licenseKeyPos = Source.Position(line: (skipkeyLicenseLines.firstIndex(where: { $0.hasPrefix("SKIPKEY:") }) ?? skipkeyLicenseLines.count) + 1, column: 0)
+                skipkeyFileSourceRange = Source.Range(start: licenseKeyPos, end: licenseKeyPos)
+
+                let yaml = try YAML.parse(skipkeyData)
                 if let license = yaml["SKIPKEY"]?.string, !license.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    return (installDate, license)
+                    licenseString = license
+                }
+            } catch {
+                throw self.error("Unable to parse \(skipkeyFile.path); please ensure it is a valid YAML file and contains a 'SKIPKEY' property with a valid license key issued by https://skip.tools. Error: \(error.localizedDescription)", sourceFile: skipkeyFileSourcePath, sourceRange: skipkeyFileSourceRange)
+            }
+        }
+
+        let license: LicenseKey? = try licenseString.flatMap {
+            do {
+                return try LicenseKey(licenseString: $0)
+            } catch {
+                // use failureReason to get information about JSON parse failures
+                throw self.error("License key error: \((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)")
+            }
+        }
+
+        if let license = license {
+            if isNativeModule {
+                switch license.licenseType {
+                case .indie:
+                    error("Skip native mode requires a paid license; please obtain a new license from https://skip.tools or contact support@skip.tools", sourceFile: skipkeyFileSourcePath, sourceRange: skipkeyFileSourceRange)
+                    break
+                case .trial, .eval:
+                    // eval/trial licenses permit native mode
+                    break
+                case .smallbusiness, .professional:
+                    // paid licenses permit native mode
+                    break
+                case .none:
+                    // no flags in legacy license key, so we cannot distinguish between indie, smallbusiess, etc.
+                    // TODO: make this an error after a grace period
+                    warn("Skip license key needs upgrade in order to use native mode; please obtain a new license from https://skip.tools or contact support@skip.tools", sourceFile: skipkeyFileSourcePath, sourceRange: skipkeyFileSourceRange)
                 }
             }
 
-            return (installDate, nil)
-        }
-
-        var (installDate, licenseString) = try parseLicenseConfig()
-        let trialExpiration = installDate.addingTimeInterval(60 * 60 * 24 * 15) // 15-day implicit trial
-
-        licenseString = licenseString ?? ProcessInfo.processInfo.environment["SKIPKEY"]
-
-        let license = try licenseString.flatMap { try LicenseKey(licenseString: $0) }
-
-        if let license = license {
             let exp = DateFormatter.localizedString(from: license.expiration, dateStyle: .short, timeStyle: .none)
-            let daysLeft = Int(ceil(license.expiration.timeIntervalSince(now) / (12 * 60 * 60)))
+            let daysLeft = Int(ceil(license.expiration.timeIntervalSince(now) / (24 * 60 * 60)))
 
             // if the license key has a hostid encoded into it, then validate it against the current machine
             if let hostid = license.hostid, hostid != ProcessInfo.processInfo.hostIdentifier {
-                throw error("Skip license key validation failed – manage your skipkeys at https://skip.tools")
+                throw error("Skip license key validation failed – the host identifier is invalid. Please contact support@skip.tools", sourceFile: skipkeyFileSourcePath, sourceRange: skipkeyFileSourceRange)
             }
 
             // allow padding the license expiration for up to 14 days
             if daysLeft < 0 {
-                throw error("Skip license key expired on \(exp) – get a new skipkey from https://skip.tools")
-            } else if daysLeft <= 10 { // warn when the license is about to expire
-                warn("Skip license key will expire in \(daysLeft) day\(daysLeft == 1 ? "" : "s") on \(exp) – get a new skipkey from https://skip.tools")
+                throw error("Skip license key expired on \(exp) – obtain a new license from https://skip.tools")
+            } else if daysLeft <= 14 { // warn when the license is about to expire
+                warn("Skip license key will expire in \(daysLeft) day\(daysLeft == 1 ? "" : "s") on \(exp) – obtain a new license key from https://skip.tools", sourceFile: skipkeyFileSourcePath, sourceRange: skipkeyFileSourceRange)
             } else {
-                info("Skip license key valid through \(exp)")
+                info("Skip license key valid through \(exp)", sourceFile: skipkeyFileSourcePath, sourceRange: skipkeyFileSourceRange)
             }
         } else if now < trialExpiration {
-            let exp = DateFormatter.localizedString(from: trialExpiration, dateStyle: .short, timeStyle: .none)
+            let exp = DateFormatter.localizedString(from: trialExpiration, dateStyle: .medium, timeStyle: .none)
             let daysLeft = Int(ceil(trialExpiration.timeIntervalSince(now) / (12 * 60 * 60)))
-            if daysLeft <= 10 {
-                warn("Skip trial will expire in \(daysLeft) day\(daysLeft == 1 ? "" : "s") on \(exp) – get a skipkey from https://skip.tools")
+            if daysLeft <= 21 {
+                warn("Skip trial will expire in \(daysLeft) day\(daysLeft == 1 ? "" : "s") on \(exp) – obtain a license key from https://skip.tools", sourceFile: skipkeyFileSourcePath, sourceRange: skipkeyFileSourceRange)
             }
-        } else if !unlicensedSources.isEmpty {
+        } else if !sourceFiles.isEmpty {
             // report on all the files that were missing the requisite headers
-            let licenseError = LicenseError.unmatchedHeaders(sourceURLs: unlicensedSources)
-            error(licenseError.localizedDescription, sourceFile: licenseError.sourceFile)
+            let licenseError = LicenseError.unmatchedHeaders(sourceURLs: sourceFiles)
+            error(licenseError.localizedDescription, sourceFile: skipkeyFileSourcePath, sourceRange: skipkeyFileSourceRange)
             throw licenseError
         }
-
-        return sourceHashes
     }
 }
 
@@ -248,6 +301,7 @@ struct LicenseKey : Equatable, Codable {
     let id: String
     let expiration: Date
     let hostid: String?
+    let flags: LicenseFlags?
 
     // bookends make the key identifiable with a regular expression ("^SKP[0-9A-F]{10,}PKS$"), so we can be notified of leaked keys by key scanning services like:
     // https://docs.github.com/en/code-security/secret-scanning/secret-scanning-partner-program#the-secret-scanning-process
@@ -258,12 +312,45 @@ struct LicenseKey : Equatable, Codable {
         case id = "id"
         case expiration = "x"
         case hostid = "h"
+        case flags = "f"
     }
 
-    @inlinable init(id: String, expiration: Date, hostid: String? = nil) {
+    struct LicenseFlags : OptionSet, Codable {
+        static let trial = LicenseFlags(rawValue: 1 << 0)
+        static let eval = LicenseFlags(rawValue: 1 << 1)
+        static let indie = LicenseFlags(rawValue: 1 << 2)
+        static let smallbusiness = LicenseFlags(rawValue: 1 << 3)
+        static let professional = LicenseFlags(rawValue: 1 << 4)
+
+        let rawValue: Int
+        init(rawValue: Int) {
+            self.rawValue = rawValue
+        }
+    }
+
+    enum LicenseType : String, CaseIterable, Codable {
+        case trial
+        case eval
+        case indie
+        case smallbusiness
+        case professional
+
+        var licenseFlags: LicenseFlags {
+            switch self {
+            case .trial: return [.trial]
+            case .eval: return [.eval]
+            case .indie: return [.indie]
+            case .smallbusiness: return [.smallbusiness]
+            case .professional: return [.professional]
+            }
+        }
+    }
+
+    @inlinable init(id: String, expiration: Date, hostid: String? = nil, flags: LicenseFlags?) {
         self.id = id
         self.expiration = expiration
         self.hostid = hostid
+        self.flags = flags
     }
 
     @inlinable init(licenseString: String) throws {
@@ -272,6 +359,20 @@ struct LicenseKey : Equatable, Codable {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .secondsSince1970
         self = try decoder.decode(LicenseKey.self, from: jsonData)
+    }
+
+    /// The type of the license is encoded in the flags
+    var licenseType: LicenseType? {
+        guard let flags else {
+            return nil // legacy without a flag field
+        }
+
+        for type in LicenseType.allCases.reversed() {
+            if flags.contains(type.licenseFlags) {
+                return type
+            }
+        }
+        return nil // unknown or unset
     }
 
     /// Returns the unencrypted JSON-encoded license string
@@ -304,6 +405,7 @@ struct LicenseKey : Equatable, Codable {
         let revokedLicenseKeys: Set<String> = [
             //"SKP00000000000000000000000000000000000000PKS", // example of a leaked key
             "SKP8EA6DB28FCC9E14E1D04F6F3C27446F85ACD05350C046F8733AA980980980F1EF3EACB3C49A6CB271FEE2E73F0B9D8C4D6C9D06C61222AC45E1581E40DF80BA8C62E2BEF4BF03D118A2A267967E5CAA0013CB44D0F3B85624C5C017EB2D1596D2B4B8F142CF0346E1B764E032FA3FD4301E28C96E163209A3549DD35996A11700073930CPKS", // change of hostid from 25429A59-8F34-5502-8455-9F1AEF860FA5 to E7E67EEE-B69C-5D41-9DFD-C3ED33F4220B requested by angel.henderson@salemwebnetwork.com on 2024-08-28 (replaced with: SKP8290E7E92AA3033A7AF1909DA76460AD1E86241CC813D6FECF5CFC1C643FA30786476F16E0DF0541321BC866E169A1242E9B2AD4A7AC6B2AEA79D80BC61CA9A579A3754B4B921FC12E0B77D5EEBAAC1B83615D435498DB8APKS)
+            "SKP8BC5E57A2FBD674FCCC032BA695B96C9B4C70DE6634B7449D1402BDE604C10893BAAC247EAE300B880F9138B6A3C0603F1E9C980F29799C5E4272DC57B69A57D6E42920245357E0993CC16C58DA5C2110FA649065EBB7D5E4EA8FA00D16E5F3027E81051C056C0018C116F2D954F9AB441056F9C88PKS", // change of hostid from 8410326C-D9B6-5A3F-8382-F8B978322EF3 to 12008BD0-ECAC-55C3-A9FF-FC6CED4436FD for Pierluigi Cifani <pcifani@theleftbit.com> on April 26, 2025
         ]
 
         if revokedLicenseKeys.contains(licenseString) {
@@ -473,13 +575,3 @@ func aes(nonce: AES.GCM.Nonce? = nil, keyBase64 keyString: String? = nil, data: 
     // we've exhaused the keywheel
     throw LicenseError.noKeys
 }
-
-/// Returns the ~/.skiptools/ folder, throwing an error if it does not exist (it should have been created by `skip welcome` in the postinstall for `brew install skiptools/skip/skip`
-func skiptoolsFolder() throws -> (URL, Date) {
-    let folder = URL(fileURLWithPath: ".skiptools", relativeTo: URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true))
-    guard let installDate = try? folder.resourceValues(forKeys: [.creationDateKey]).creationDate else {
-        throw LicenseError.skipNotInstalled
-    }
-    return (folder, installDate)
-}
-
