@@ -37,12 +37,12 @@ extension SkipCommand {
         try? await outputOptions.monitor(with: out, "Check Skip Updates", resultHandler: { result in
             (result, MessageBlock(status: result?.messageStatusAny, "Check Skip Updates: \((try? result?.get()) ?? "?")"))
         }) { loggingHandler in
-            try await fetchLatestRelease(from: URL(string: "https://source.skip.tools/skip/releases.atom")!)
+            try await fetchLatestRelease()
         }.get()
     }
 
     /// Grabs an Atom XML feed of releases and returns the first title.
-    private func fetchLatestRelease(from atomURL: URL) async throws -> String? {
+    func fetchLatestRelease(from atomURL: URL = URL(string: "https://source.skip.tools/skip/releases.atom")!) async throws -> String? {
         let request = URLRequest(url: atomURL, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData, timeoutInterval: 120.0)
         let (data, response) = try await URLSession.shared.data(for: request, delegate: URLSessionTaskDelegate?.none)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
