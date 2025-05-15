@@ -192,21 +192,38 @@ extension StreamingCommand {
         return sourceHashes
     }
 
-    func verifySkipInstallation(sourceFiles: [URL], isNativeModule: Bool, against now: Date = Date.now) throws {
+    /// The Homebrew Caskroom install location for Skip
+    var skipHomebrewCaskroomFolder: String { ProcessInfo.homebrewRoot + "/Caskroom/skip" }
+
+    /// The Homebrew Tap location for skiptools
+    var skipHomebrewTapsFolder: String { ProcessInfo.homebrewRoot + "/Library/Taps/skiptools" }
+
+    func checkSkipUpdated() {
         // check whether the locally-installed Homebrew version of Skip matches the current version; recommend upgrading if not
-        let skipInstallMarkerFile = ProcessInfo.homebrewRoot + "/Caskroom/skip"
-        let skipUpdatedMarkerFile = skipInstallMarkerFile + "/" + skipVersion + "/skip.artifactbundle/info.json"
-        if !FileManager.default.fileExists(atPath: skipInstallMarkerFile) {
+        let skipUpdatedMarkerFile = skipHomebrewCaskroomFolder + "/" + skipVersion + "/skip.artifactbundle/info.json"
+        if !FileManager.default.fileExists(atPath: skipHomebrewCaskroomFolder) {
             warn("Skip installaton not found. See https://skip.tools and install with: brew install skiptools/skip/skip")
         } else if !FileManager.default.fileExists(atPath: skipUpdatedMarkerFile) {
             warn("Skip installation is out of date with skipstone plugin version \(skipVersion). Please upgrade by running: skip upgrade")
         }
+    }
 
+    /// Parse the license file and return information about the key
+    func loadSkipLicense() throws -> (license: LicenseKey?, trialExpiration: Date, skipkeyFileSourcePath: Source.FilePath, skipkeyFileSourceRange: Source.Range?) {
         // Get the ~/.skiptools/ folder, throwing an error if it does not exist (it should have been created by `skip welcome` in the postinstall for `brew install skiptools/skip/skip`
         let skiptoolsFolder = URL(fileURLWithPath: ".skiptools", relativeTo: URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true))
-        guard let installDate = try? skiptoolsFolder.resourceValues(forKeys: [.creationDateKey]).creationDate else {
+        guard let skiptoolsInstallDate = try? skiptoolsFolder.resourceValues(forKeys: [.creationDateKey]).creationDate else {
             throw LicenseError.skipNotInstalled
         }
+
+        // the install date is the minimum creation date of a set of folders that act as markers for when Skip was first installed on the machine
+        let installDate = [
+            skiptoolsFolder,
+            URL(fileURLWithPath: skipHomebrewCaskroomFolder),
+            URL(fileURLWithPath: skipHomebrewTapsFolder),
+        ].compactMap({
+            try? $0.resourceValues(forKeys: [.creationDateKey]).creationDate
+        }).min() ?? skiptoolsInstallDate
 
         let trialExpiration = installDate.addingTimeInterval(60 * 60 * 24 * 15) // 15-day implicit trial
         let skipkeyFile = URL(fileURLWithPath: "skipkey.env", isDirectory: false, relativeTo: skiptoolsFolder)
@@ -245,6 +262,17 @@ extension StreamingCommand {
             }
         }
 
+        return (license, trialExpiration, skipkeyFileSourcePath, skipkeyFileSourceRange)
+    }
+
+    /// The number of days within which to start warning that a license is about to expire
+    var licenseWarnDays: Int { 14 }
+
+    func verifySkipInstallation(sourceFiles: [URL], isNativeModule: Bool, against now: Date = Date.now) throws {
+        checkSkipUpdated()
+
+        let (license, trialExpiration, skipkeyFileSourcePath, skipkeyFileSourceRange) = try loadSkipLicense()
+
         if let license = license {
             if isNativeModule {
                 switch license.licenseType {
@@ -275,7 +303,7 @@ extension StreamingCommand {
             // allow padding the license expiration for up to 14 days
             if daysLeft < 0 {
                 throw error("Skip license key expired on \(exp) – obtain a new license from https://skip.tools")
-            } else if daysLeft <= 14 { // warn when the license is about to expire
+            } else if daysLeft <= licenseWarnDays { // warn when the license is about to expire
                 warn("Skip license key will expire in \(daysLeft) day\(daysLeft == 1 ? "" : "s") on \(exp) – obtain a new license key from https://skip.tools", sourceFile: skipkeyFileSourcePath, sourceRange: skipkeyFileSourceRange)
             } else {
                 info("Skip license key valid through \(exp)", sourceFile: skipkeyFileSourcePath, sourceRange: skipkeyFileSourceRange)
