@@ -11,10 +11,11 @@
 # PRODUCT=SkipKey COPYPRODUCT=1 ./scripts/build_linux.sh
 
 # e.g., swift.build.x86_64-swift-linux-musl will use "x86_64-swift-linux-musl"
-#VERSION="6.0.3"
-VERSION="6.1"
+#VERSION="swift-6.0.3-RELEASE"
+VERSION="swift-6.1-RELEASE"
+#VERSION="swift-6.2-DEVELOPMENT-SNAPSHOT-2025-05-15-a"
 SDK="x86_64-swift-linux-musl"
-TOOLCHAIN="${HOME}/Library/Developer/Toolchains/swift-${VERSION}-RELEASE.xctoolchain/usr"
+TOOLCHAIN="${HOME}/Library/Developer/Toolchains/${VERSION}.xctoolchain/usr"
 CONFIGURATION=${CONFIGURATION:-"debug"}
 
 PRODUCT=${PRODUCT:-"SkipRunner"}
