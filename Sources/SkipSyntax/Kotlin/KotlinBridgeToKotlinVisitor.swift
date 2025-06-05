@@ -1156,7 +1156,7 @@ final class KotlinBridgeToKotlinVisitor {
         for member in classDeclaration.members {
             if let enumCaseDeclaration = member as? KotlinEnumCaseDeclaration {
                 enumCases.append(enumCaseDeclaration)
-                if let bridgables = enumCaseDeclaration.checkBridgable(direction: .any, options: options, translator: translator) {
+                if let bridgables = enumCaseDeclaration.checkBridgable(direction: .toKotlin, options: options, translator: translator) {
                     enumCaseBridgables.append(bridgables)
                     enumCaseDeclaration.associatedValues = enumCaseDeclaration.associatedValues.enumerated().map { entry in
                         var associatedValue = entry.element

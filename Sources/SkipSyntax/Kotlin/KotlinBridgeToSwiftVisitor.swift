@@ -1100,7 +1100,7 @@ final class KotlinBridgeToSwiftVisitor {
         }
         if !isEmptyEnum {
             if isEnum {
-                let caseBridgables = enumCases.compactMap({ $0.checkBridgable(direction: .any, options: options, translator: translator) })
+                let caseBridgables = enumCases.compactMap({ $0.checkBridgable(direction: .toSwift, options: options, translator: translator) })
                 swift.append(1, Self.swiftForEnumJConvertibleContract(className: classRef.className, generics: classRef.generics, isSealedClassesEnum: classDeclaration.isSealedClassesEnum, caseDeclarations: enumCases, bridgables: caseBridgables, visibility: finalMemberVisibility, options: options, translator: translator))
             } else if !isBridgedSubclass {
                 swift.append(1, Self.swiftForJConvertibleContract(in: classDeclaration.declarationType, visibility: finalMemberVisibility))
