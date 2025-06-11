@@ -1033,7 +1033,12 @@ final class KotlinBridgeToSwiftVisitor {
                 swift.append(1, "}")
             } else {
                 if !isBridgedSubclass {
-                    swift.append(1, "nonisolated \(finalMemberVisibilityString)\(isStruct ? "var" : "let") Java_peer: JObject")
+                    let peerDeclaration = "\(finalMemberVisibilityString)\(isStruct ? "var" : "let") Java_peer: JObject"
+                    swift.append(1, "#if swift(<6)")
+                    swift.append(1, peerDeclaration)
+                    swift.append(1, "#else")
+                    swift.append(1, "nonisolated \(peerDeclaration)")
+                    swift.append(1, "#endif")
                 }
                 swift.append(1, "nonisolated \(finalMemberVisibilityString)\(isStruct || isActor ? "" : "required ")init(Java_ptr: JavaObjectPointer) {")
                 if isBridgedSubclass {
@@ -1457,7 +1462,12 @@ final class KotlinBridgeToSwiftVisitor {
 
         let classRef = JavaClassRef(for: type, packageName: packageName)
         swift.append(1, classRef.declaration())
-        swift.append(1, "nonisolated \(visibilityString)let Java_peer: JObject")
+        let peerDeclaration = "\(visibilityString)let Java_peer: JObject"
+        swift.append(1, "#if swift(<6)")
+        swift.append(1, peerDeclaration)
+        swift.append(1, "#else")
+        swift.append(1, "nonisolated \(peerDeclaration)")
+        swift.append(1, "#endif")
         swift.append(1, "nonisolated \(visibilityString)required init(Java_ptr: JavaObjectPointer) {")
         swift.append(2, "Java_peer = JObject(Java_ptr)")
         swift.append(1, "}")
