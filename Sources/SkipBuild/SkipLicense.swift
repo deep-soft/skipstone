@@ -274,7 +274,7 @@ extension StreamingCommand {
         let (license, trialExpiration, skipkeyFileSourcePath, skipkeyFileSourceRange) = try loadSkipLicense()
 
         if let license = license {
-            if isNativeModule {
+            if isNativeModule && false { // we no longer gate SkipFuse on professional license…
                 switch license.licenseType {
                 case .indie:
                     error("Skip native mode requires a paid license; please obtain a new license from https://skip.tools or contact support@skip.tools", sourceFile: skipkeyFileSourcePath, sourceRange: skipkeyFileSourceRange)
