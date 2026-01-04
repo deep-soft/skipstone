@@ -390,9 +390,18 @@ struct LicenseCommand: AsyncParsableCommand {
     struct LicenseUpdateCommand: SingleStreamingCommand {
         typealias Output = MessageBlock
 
-        static var configuration = CommandConfiguration(commandName: "update", abstract: "Update the licence key file with the new license")
+        static var configuration = CommandConfiguration(
+            commandName: "update",
+            abstract: "Update the licence key file with the new license",
+            //usage: "skip license update <licensekey>",
+            discussion: """
+            This command will update the ~/.skiptools/skipkey.env YAML with the specified license key.
+            
+            License keys can be obtained from https://skip.tools/pricing/ or by contacting support@skip.tools
+            """,
+            shouldDisplay: true)
 
-        @OptionGroup(title: "Output Options")
+        @OptionGroup(title: "Output Options", visibility: .hidden)
         var outputOptions: OutputOptions
 
         @Argument(help: ArgumentHelp("The license key to update"))
@@ -423,12 +432,20 @@ struct LicenseCommand: AsyncParsableCommand {
     }
 
     struct LicenseInfoCommand: SingleStreamingCommand {
-        static var configuration = CommandConfiguration(commandName: "info", abstract: "Show key info")
+        static var configuration = CommandConfiguration(
+            commandName: "info",
+            abstract: "Show key info",
+            discussion: """
+            This command will take the specified key argument (or the key specified in the ~/.skiptools/skipkey.env YAML file) and output information about the key like the expiration and associated host id.
+            
+            License keys can be obtained from https://skip.tools/pricing/ or by contacting support@skip.tools
+            """,
+            shouldDisplay: true)
 
         @Argument(help: ArgumentHelp("The license key to show info for"))
         var key: String?
 
-        @OptionGroup(title: "Output Options")
+        @OptionGroup(title: "Output Options", visibility: .hidden)
         var outputOptions: OutputOptions
 
         typealias Output = KeyOutput
