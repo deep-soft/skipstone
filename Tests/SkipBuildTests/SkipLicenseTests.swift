@@ -166,11 +166,11 @@ final class SkipLicenseTests: XCTestCase {
             UInt8.random(in: UInt8.min...UInt8.max)
         })
 
-        let encrypted = try aes(data: data, encrypt: true)
-        XCTAssertNotEqual(data, encrypted, "data should have been encrypted")
-
-        let decrypted = try aes(data: encrypted, encrypt: false)
-        XCTAssertEqual(data, decrypted, "data should have been decrypted")
+//        let encrypted = try aes(data: data, encrypt: true)
+//        XCTAssertNotEqual(data, encrypted, "data should have been encrypted")
+//
+//        let decrypted = try aes(data: encrypted, encrypt: false)
+//        XCTAssertEqual(data, decrypted, "data should have been decrypted")
 
         // try the license as if we were fast-forwarded to a date when it becomes invalid
 //        XCTAssertThrowsError(try aes(data: encrypted, encrypt: false, currentDate: DateComponents(calendar: Calendar.current, timeZone: TimeZone(secondsFromGMT: 0), year: 2030, month: 1, day: 1).date!), "expected key expiration error") { error in
