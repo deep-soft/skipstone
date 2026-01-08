@@ -166,6 +166,8 @@ final class SkipLicenseTests: XCTestCase {
             UInt8.random(in: UInt8.min...UInt8.max)
         })
 
+        _ = data
+
 //        let encrypted = try aes(data: data, encrypt: true)
 //        XCTAssertNotEqual(data, encrypted, "data should have been encrypted")
 //
