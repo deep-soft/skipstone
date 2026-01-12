@@ -392,7 +392,7 @@ struct LicenseCommand: AsyncParsableCommand {
 
         static var configuration = CommandConfiguration(
             commandName: "update",
-            abstract: "Update the licence key file with the new license",
+            abstract: "Update the license key file with the new license",
             //usage: "skip license update <licensekey>",
             discussion: """
             This command will update the ~/.skiptools/skipkey.env YAML with the specified license key.
